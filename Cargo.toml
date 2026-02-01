@@ -33,6 +33,7 @@ thiserror = "2.0"             # Custom error types
 
 # Utilities
 dirs = "6.0"                  # Platform-specific directories (~/.config)
+which = "8.0.0"
 
 [dev-dependencies]
 # Testing

@@ -82,6 +82,9 @@ pub enum ConfigAction {
     /// Show current configuration
     Show,
 
+    /// Open config file in $EDITOR
+    Edit,
+
     /// Reset configuration to defaults
     Reset,
 }

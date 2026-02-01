@@ -7,7 +7,7 @@ mod error;
 mod git;
 mod ui;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
 use clap::Parser;
 use std::fs;
@@ -440,6 +440,45 @@ fn cmd_config(action: ConfigAction) -> Result<()> {
                 values.join(", ")
             };
             ui::success(&format!("Set {} = {}", key, display_value));
+        }
+
+        ConfigAction::Edit => {
+            // Ensure config file exists
+            let _ = Config::load()?;
+            let config_path = Config::config_path()?;
+
+            // Get editor from $EDITOR or $VISUAL, fallback to common editors
+            let editor = std::env::var("EDITOR")
+                .or_else(|_| std::env::var("VISUAL"))
+                .unwrap_or_else(|_| {
+                    // Try common editors
+                    if which::which("nano").is_ok() {
+                        "nano".to_string()
+                    } else if which::which("vim").is_ok() {
+                        "vim".to_string()
+                    } else if which::which("vi").is_ok() {
+                        "vi".to_string()
+                    } else {
+                        "nano".to_string() // Default fallback
+                    }
+                });
+
+            ui::info(&format!(
+                "Opening {} in {}...",
+                config_path.display(),
+                editor
+            ));
+
+            let status = std::process::Command::new(&editor)
+                .arg(&config_path)
+                .status()
+                .with_context(|| format!("Failed to open editor: {}", editor))?;
+
+            if status.success() {
+                ui::success("Config file saved");
+            } else {
+                ui::warning("Editor exited with non-zero status");
+            }
         }
 
         ConfigAction::Reset => {
