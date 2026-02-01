@@ -16,7 +16,7 @@
 
 ## Installation
 
-### Quick Install (Linux/macOS)
+### Quick Install (macOS/Linux)
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/armgabrielyan/deadbranch/main/install.sh | sh

@@ -1,9 +1,8 @@
 # Homebrew Formula for deadbranch
 #
-# To use this formula:
-# 1. Create a tap repository: homebrew-deadbranch
-# 2. Add this file as Formula/deadbranch.rb
-# 3. Users can then: brew install armgabrielyan/deadbranch/deadbranch
+# This formula is available via:
+#   brew tap armgabrielyan/deadbranch https://github.com/armgabrielyan/homebrew-deadbranch
+#   brew install deadbranch
 #
 # Or build from source:
 #   brew install --HEAD armgabrielyan/deadbranch/deadbranch
