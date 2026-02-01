@@ -197,3 +197,231 @@ impl Config {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Helper to create a temporary config in a temp directory
+    fn with_temp_config<F>(test: F)
+    where
+        F: FnOnce(PathBuf),
+    {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+        test(config_path);
+    }
+
+    #[test]
+    fn test_default_config() {
+        let config = Config::default();
+        assert_eq!(config.general.default_days, 30);
+        assert_eq!(
+            config.branches.protected,
+            vec!["main", "master", "develop", "staging", "production"]
+        );
+        assert_eq!(
+            config.branches.exclude_patterns,
+            vec!["wip/*", "draft/*", "*/wip", "*/draft"]
+        );
+        assert_eq!(config.branches.default_branch, None);
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = Config::default();
+        let toml_str = toml::to_string(&config).unwrap();
+        assert!(toml_str.contains("[general]"));
+        assert!(toml_str.contains("default_days = 30"));
+        assert!(toml_str.contains("[branches]"));
+        assert!(toml_str.contains("protected"));
+        assert!(toml_str.contains("exclude_patterns"));
+    }
+
+    #[test]
+    fn test_config_deserialization() {
+        let toml_str = r#"
+            [general]
+            default_days = 45
+
+            [branches]
+            default_branch = "master"
+            protected = ["main", "develop"]
+            exclude_patterns = ["temp/*"]
+        "#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.general.default_days, 45);
+        assert_eq!(config.branches.protected, vec!["main", "develop"]);
+        assert_eq!(config.branches.exclude_patterns, vec!["temp/*"]);
+        assert_eq!(config.branches.default_branch, Some("master".to_string()));
+    }
+
+    #[test]
+    fn test_config_set_default_days() {
+        let mut config = Config::default();
+        config.set("default-days", &["45".to_string()]).unwrap();
+        assert_eq!(config.general.default_days, 45);
+
+        // Alternative key name
+        config.set("days", &["60".to_string()]).unwrap();
+        assert_eq!(config.general.default_days, 60);
+
+        // Dotted key name
+        config
+            .set("general.default-days", &["75".to_string()])
+            .unwrap();
+        assert_eq!(config.general.default_days, 75);
+    }
+
+    #[test]
+    fn test_config_set_default_days_invalid() {
+        let mut config = Config::default();
+        let result = config.set("default-days", &["not_a_number".to_string()]);
+        assert!(result.is_err());
+
+        // Multiple values should fail
+        let result = config.set("default-days", &["30".to_string(), "45".to_string()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_config_set_protected_branches() {
+        let mut config = Config::default();
+        config
+            .set(
+                "protected-branches",
+                &["main".to_string(), "develop".to_string()],
+            )
+            .unwrap();
+        assert_eq!(config.branches.protected, vec!["main", "develop"]);
+
+        // Can set single value
+        config
+            .set("protected-branches", &["main".to_string()])
+            .unwrap();
+        assert_eq!(config.branches.protected, vec!["main"]);
+
+        // Dotted key
+        config
+            .set("branches.protected", &["staging".to_string()])
+            .unwrap();
+        assert_eq!(config.branches.protected, vec!["staging"]);
+
+        // Can clear with empty string
+        config.set("protected-branches", &["".to_string()]).unwrap();
+        assert!(config.branches.protected.is_empty());
+    }
+
+    #[test]
+    fn test_config_set_default_branch() {
+        let mut config = Config::default();
+        config
+            .set("default-branch", &["master".to_string()])
+            .unwrap();
+        assert_eq!(config.branches.default_branch, Some("master".to_string()));
+
+        // Dotted key
+        config
+            .set("branches.default-branch", &["main".to_string()])
+            .unwrap();
+        assert_eq!(config.branches.default_branch, Some("main".to_string()));
+
+        // Can clear with empty string
+        config.set("default-branch", &["".to_string()]).unwrap();
+        assert_eq!(config.branches.default_branch, None);
+    }
+
+    #[test]
+    fn test_config_set_default_branch_invalid() {
+        let mut config = Config::default();
+        // Multiple values should fail
+        let result = config.set(
+            "default-branch",
+            &["main".to_string(), "master".to_string()],
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_config_set_exclude_patterns() {
+        let mut config = Config::default();
+        config
+            .set(
+                "exclude-patterns",
+                &["temp/*".to_string(), "*/old".to_string()],
+            )
+            .unwrap();
+        assert_eq!(config.branches.exclude_patterns, vec!["temp/*", "*/old"]);
+
+        // Dotted key
+        config
+            .set("branches.exclude-patterns", &["test/*".to_string()])
+            .unwrap();
+        assert_eq!(config.branches.exclude_patterns, vec!["test/*"]);
+
+        // Can clear with empty string
+        config.set("exclude-patterns", &["".to_string()]).unwrap();
+        assert!(config.branches.exclude_patterns.is_empty());
+    }
+
+    #[test]
+    fn test_config_set_unknown_key() {
+        let mut config = Config::default();
+        let result = config.set("unknown-key", &["value".to_string()]);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown config key"));
+    }
+
+    #[test]
+    fn test_config_save_and_load() {
+        with_temp_config(|config_path| {
+            let temp_dir = config_path.parent().unwrap();
+
+            // Override the config path for this test
+            let mut config = Config::default();
+            config.general.default_days = 45;
+            config.branches.protected = vec!["main".to_string()];
+
+            // Save manually to temp path
+            fs::create_dir_all(temp_dir).unwrap();
+            let content = toml::to_string_pretty(&config).unwrap();
+            fs::write(&config_path, content).unwrap();
+
+            // Load and verify
+            let loaded_content = fs::read_to_string(&config_path).unwrap();
+            let loaded_config: Config = toml::from_str(&loaded_content).unwrap();
+            assert_eq!(loaded_config.general.default_days, 45);
+            assert_eq!(loaded_config.branches.protected, vec!["main"]);
+        });
+    }
+
+    #[test]
+    fn test_get_repo_name() {
+        let repo_name = Config::get_repo_name();
+        // Should be "deadbranch" when running in the deadbranch directory
+        assert!(!repo_name.is_empty());
+        assert_ne!(repo_name, "unknown-repo");
+    }
+
+    #[test]
+    fn test_config_paths() {
+        // These should not panic and should return valid paths
+        let deadbranch_dir = Config::deadbranch_dir();
+        assert!(deadbranch_dir.is_ok());
+
+        let config_path = Config::config_path();
+        assert!(config_path.is_ok());
+
+        let backups_dir = Config::backups_dir();
+        assert!(backups_dir.is_ok());
+
+        let repo_backup = Config::repo_backup_dir("test-repo");
+        assert!(repo_backup.is_ok());
+        assert!(repo_backup.unwrap().to_string_lossy().contains("test-repo"));
+    }
+}
