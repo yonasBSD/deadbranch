@@ -13,9 +13,9 @@ use tempfile::TempDir;
 fn create_test_repo() -> TempDir {
     let temp_dir = TempDir::new().unwrap();
 
-    // Initialize git repo
+    // Initialize git repo with explicit main branch
     StdCommand::new("git")
-        .args(["init"])
+        .args(["init", "-b", "main"])
         .current_dir(&temp_dir)
         .output()
         .unwrap();
@@ -101,20 +101,38 @@ fn make_branch_old(repo_dir: &std::path::Path, branch_name: &str, days_old: u32)
         .unwrap();
 
     // Amend the commit with an old date using Unix timestamp
-    let date = format!("{}", old_timestamp);
-    StdCommand::new("git")
+    // Git accepts @<timestamp> format for dates (portable across platforms)
+    let date = format!("@{}", old_timestamp);
+    let output = StdCommand::new("git")
         .args(["commit", "--amend", "--no-edit", "--date", &date])
         .env("GIT_COMMITTER_DATE", &date)
         .current_dir(repo_dir)
         .output()
         .unwrap();
 
-    // Go back to main
-    StdCommand::new("git")
+    // Debug: print if the command failed
+    if !output.status.success() {
+        eprintln!(
+            "Warning: git commit --amend failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    // Go back to main/master (handle both cases)
+    let checkout_main = StdCommand::new("git")
         .args(["checkout", "main"])
         .current_dir(repo_dir)
         .output()
         .unwrap();
+
+    if !checkout_main.status.success() {
+        // Try master if main doesn't exist
+        StdCommand::new("git")
+            .args(["checkout", "master"])
+            .current_dir(repo_dir)
+            .output()
+            .unwrap();
+    }
 }
 
 #[test]

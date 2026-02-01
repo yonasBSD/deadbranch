@@ -10,9 +10,9 @@ use tempfile::TempDir;
 fn create_test_repo() -> TempDir {
     let temp_dir = TempDir::new().unwrap();
 
-    // Initialize git repo
+    // Initialize git repo with explicit main branch
     StdCommand::new("git")
-        .args(["init"])
+        .args(["init", "-b", "main"])
         .current_dir(&temp_dir)
         .output()
         .unwrap();
@@ -75,7 +75,7 @@ fn test_list_merged_branches_only() {
         .unwrap()
         .as_secs();
     let old_timestamp = now - (45 * 86400);
-    let date = format!("{}", old_timestamp);
+    let date = format!("@{}", old_timestamp);
     StdCommand::new("git")
         .args(["commit", "--amend", "--no-edit", "--date", &date])
         .env("GIT_COMMITTER_DATE", &date)
@@ -135,7 +135,7 @@ fn test_list_shows_age_information() {
         .unwrap()
         .as_secs();
     let old_timestamp = now - (50 * 86400);
-    let date = format!("{}", old_timestamp);
+    let date = format!("@{}", old_timestamp);
     StdCommand::new("git")
         .args(["commit", "--amend", "--no-edit", "--date", &date])
         .env("GIT_COMMITTER_DATE", &date)
@@ -195,7 +195,7 @@ fn test_multiple_old_branches() {
             .unwrap()
             .as_secs();
         let old_timestamp = now - ((40 + i * 5) as u64 * 86400);
-        let date = format!("{}", old_timestamp);
+        let date = format!("@{}", old_timestamp);
         StdCommand::new("git")
             .args(["commit", "--amend", "--no-edit", "--date", &date])
             .env("GIT_COMMITTER_DATE", &date)
@@ -253,7 +253,7 @@ fn test_current_branch_excluded() {
         .unwrap()
         .as_secs();
     let old_timestamp = now - (50 * 86400);
-    let date = format!("{}", old_timestamp);
+    let date = format!("@{}", old_timestamp);
     StdCommand::new("git")
         .args(["commit", "--amend", "--no-edit", "--date", &date])
         .env("GIT_COMMITTER_DATE", &date)
@@ -301,7 +301,7 @@ fn test_list_shows_merged_status() {
         .unwrap()
         .as_secs();
     let old_timestamp = now - (45 * 86400);
-    let date = format!("{}", old_timestamp);
+    let date = format!("@{}", old_timestamp);
     StdCommand::new("git")
         .args(["commit", "--amend", "--no-edit", "--date", &date])
         .env("GIT_COMMITTER_DATE", &date)
