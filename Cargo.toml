@@ -15,10 +15,10 @@ categories = ["command-line-utilities", "development-tools"]
 clap = { version = "4.5", features = ["derive", "cargo", "env"] }
 
 # Terminal UI & Styling
-console = "0.15"              # Colors, emoji, terminal detection
-comfy-table = "7.1"           # Beautiful tables
-dialoguer = "0.11"            # Interactive prompts (confirm, select, input)
-indicatif = "0.17"            # Progress bars and spinners
+console = "0.16"              # Colors, emoji, terminal detection
+comfy-table = "7.2"           # Beautiful tables
+dialoguer = "0.12"            # Interactive prompts (confirm, select, input)
+indicatif = "0.18"            # Progress bars and spinners
 
 # Date & Time
 chrono = "0.4"                # Date/time handling
@@ -33,13 +33,13 @@ thiserror = "2.0"             # Custom error types
 
 # Utilities
 dirs = "6.0"                  # Platform-specific directories (~/.config)
-which = "8.0.0"
+which = "8.0.0"               # Locate executables in PATH
 
 [dev-dependencies]
 # Testing
-assert_cmd = "2.0"            # Test CLI commands
+assert_cmd = "2.1"            # Test CLI commands
 predicates = "3.1"            # Test assertions
-tempfile = "3.10"             # Temporary directories for tests
+tempfile = "3.24"             # Temporary directories for tests
 
 [profile.release]
 lto = true                    # Link-time optimization
