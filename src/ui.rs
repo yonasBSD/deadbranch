@@ -250,14 +250,24 @@ pub fn display_config(
         Cell::new(default_days.to_string()).fg(Color::Cyan),
     ]);
 
+    let protected_display = if protected_branches.is_empty() {
+        "(none)".to_string()
+    } else {
+        protected_branches.join(", ")
+    };
     table.add_row(vec![
         Cell::new("protected-branches"),
-        Cell::new(protected_branches.join(", ")).fg(Color::Cyan),
+        Cell::new(protected_display).fg(Color::Cyan),
     ]);
 
+    let exclude_display = if exclude_patterns.is_empty() {
+        "(none)".to_string()
+    } else {
+        exclude_patterns.join(", ")
+    };
     table.add_row(vec![
         Cell::new("exclude-patterns"),
-        Cell::new(exclude_patterns.join(", ")).fg(Color::Cyan),
+        Cell::new(exclude_display).fg(Color::Cyan),
     ]);
 
     table.add_row(vec![

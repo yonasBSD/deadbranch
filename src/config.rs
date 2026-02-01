@@ -128,34 +128,35 @@ impl Config {
         Ok(())
     }
 
-    /// Set a configuration value by key
-    pub fn set(&mut self, key: &str, value: &str) -> Result<()> {
+    /// Set a configuration value by key (accepts multiple values for list types)
+    pub fn set(&mut self, key: &str, values: &[String]) -> Result<()> {
         match key {
             "default-days" | "days" => {
-                self.default_days = value
+                if values.len() != 1 {
+                    anyhow::bail!("default-days expects a single value");
+                }
+                self.default_days = values[0]
                     .parse()
-                    .with_context(|| format!("Invalid number: {}", value))?;
+                    .with_context(|| format!("Invalid number: {}", values[0]))?;
             }
             "protected-branches" => {
-                self.protected_branches = value
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
+                // Filter out empty strings to allow clearing with ""
+                self.protected_branches =
+                    values.iter().filter(|s| !s.is_empty()).cloned().collect();
             }
             "default-branch" => {
-                self.default_branch = if value.is_empty() {
+                if values.len() != 1 {
+                    anyhow::bail!("default-branch expects a single value");
+                }
+                self.default_branch = if values[0].is_empty() {
                     None
                 } else {
-                    Some(value.to_string())
+                    Some(values[0].clone())
                 };
             }
             "exclude-patterns" => {
-                self.exclude_patterns = value
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
+                // Filter out empty strings to allow clearing with ""
+                self.exclude_patterns = values.iter().filter(|s| !s.is_empty()).cloned().collect();
             }
             _ => {
                 anyhow::bail!("Unknown config key: {}. Valid keys: default-days, protected-branches, default-branch, exclude-patterns", key);

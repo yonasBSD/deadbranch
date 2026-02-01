@@ -428,11 +428,18 @@ fn cmd_config(action: ConfigAction) -> Result<()> {
             );
         }
 
-        ConfigAction::Set { key, value } => {
+        ConfigAction::Set { key, values } => {
             let mut config = Config::load()?;
-            config.set(&key, &value)?;
+            config.set(&key, &values)?;
             config.save()?;
-            ui::success(&format!("Set {} = {}", key, value));
+
+            // Format display based on single value or list
+            let display_value = if values.len() == 1 {
+                values[0].clone()
+            } else {
+                values.join(", ")
+            };
+            ui::success(&format!("Set {} = {}", key, display_value));
         }
 
         ConfigAction::Reset => {

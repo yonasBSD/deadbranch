@@ -70,11 +70,13 @@ pub enum Commands {
 pub enum ConfigAction {
     /// Set a configuration value
     Set {
-        /// Configuration key (e.g., default-days, protected-branches, default-branch)
+        /// Configuration key (e.g., default-days, protected-branches, default-branch, exclude-patterns)
         key: String,
 
-        /// Configuration value
-        value: String,
+        /// Configuration value(s) - use multiple arguments for lists
+        /// Example: config set exclude-patterns "wip/*" "draft/*" "temp/*"
+        #[arg(required = true, num_args = 1..)]
+        values: Vec<String>,
     },
 
     /// Show current configuration
