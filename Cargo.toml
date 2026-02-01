@@ -1,0 +1,46 @@
+[package]
+name = "deadbranch"
+version = "0.1.0"
+edition = "2021"
+authors = ["Armen Gabrielyan"]
+description = "Clean up stale git branches safely"
+license = "MIT"
+repository = "https://github.com/armgabrielyan/deadbranch"
+readme = "README.md"
+keywords = ["git", "cli", "branches", "cleanup"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+# CLI Framework & Argument Parsing
+clap = { version = "4.5", features = ["derive", "cargo", "env"] }
+
+# Terminal UI & Styling
+console = "0.15"              # Colors, emoji, terminal detection
+comfy-table = "7.1"           # Beautiful tables
+dialoguer = "0.11"            # Interactive prompts (confirm, select, input)
+indicatif = "0.17"            # Progress bars and spinners
+
+# Date & Time
+chrono = "0.4"                # Date/time handling
+
+# Configuration
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"                  # TOML config file parsing
+
+# Error Handling
+anyhow = "1.0"                # Flexible error handling
+thiserror = "2.0"             # Custom error types
+
+# Utilities
+dirs = "6.0"                  # Platform-specific directories (~/.config)
+
+[dev-dependencies]
+# Testing
+assert_cmd = "2.0"            # Test CLI commands
+predicates = "3.1"            # Test assertions
+tempfile = "3.10"             # Temporary directories for tests
+
+[profile.release]
+lto = true                    # Link-time optimization
+codegen-units = 1             # Better optimization
+strip = true                  # Strip symbols for smaller binary
