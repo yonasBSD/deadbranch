@@ -80,6 +80,7 @@ fn cmd_list(
         remote_only,
         merged_only,
         protected_branches: config.protected_branches,
+        exclude_patterns: config.exclude_patterns,
     };
 
     let mut branches: Vec<_> = all_branches
@@ -142,7 +143,8 @@ fn cmd_clean(
         local_only,
         remote_only,
         merged_only,
-        protected_branches: config.protected_branches,
+        protected_branches: config.protected_branches.clone(),
+        exclude_patterns: config.exclude_patterns,
     };
 
     // List all branches
@@ -173,10 +175,31 @@ fn cmd_clean(
     if dry_run {
         // For dry-run, show all tables upfront
         if !local_branches.is_empty() {
-            ui::display_branches(&local_branches, "Local Branches to Delete:");
+            let title = format!(
+                "Local {} to Delete:",
+                ui::pluralize_branch_cap(local_branches.len())
+            );
+            ui::display_branches(&local_branches, &title);
         }
         if !remote_branches.is_empty() {
-            ui::display_branches(&remote_branches, "Remote Branches to Delete:");
+            let title = format!(
+                "Remote {} to Delete:",
+                ui::pluralize_branch_cap(remote_branches.len())
+            );
+            ui::display_branches(&remote_branches, &title);
+        }
+        if !remote_branches.is_empty() {
+            let title = format!(
+                "Remote {} to Delete:",
+                ui::pluralize_branch(remote_branches.len())
+                    .to_uppercase()
+                    .chars()
+                    .next()
+                    .unwrap()
+                    .to_string()
+                    + &ui::pluralize_branch(remote_branches.len())[1..]
+            );
+            ui::display_branches(&remote_branches, &title);
         }
 
         ui::print_dry_run_header();
@@ -201,11 +224,16 @@ fn cmd_clean(
 
     // Handle local branches - show table right before confirmation
     if !local_branches.is_empty() {
-        ui::display_branches(&local_branches, "Local Branches to Delete:");
+        let title = format!(
+            "Local {} to Delete:",
+            ui::pluralize_branch_cap(local_branches.len())
+        );
+        ui::display_branches(&local_branches, &title);
 
         if ui::confirm_local_deletion(&local_branches) {
             delete_branches_with_backup(&local_branches, force)?;
         } else {
+            println!();
             ui::info("Skipped local branch deletion.");
         }
     }
@@ -231,11 +259,16 @@ fn cmd_clean(
         }
 
         // Show table and get confirmation
-        ui::display_branches(&remote_branches, "Remote Branches to Delete:");
+        let title = format!(
+            "Remote {} to Delete:",
+            ui::pluralize_branch_cap(remote_branches.len())
+        );
+        ui::display_branches(&remote_branches, &title);
 
         if ui::confirm_remote_deletion(&remote_branches) {
             delete_remote_branches_with_backup(&remote_branches)?;
         } else {
+            println!();
             ui::info("Skipped remote branch deletion.");
         }
     }
@@ -246,7 +279,11 @@ fn cmd_clean(
 /// Delete local branches and create backup file
 fn delete_branches_with_backup(branches: &[branch::Branch], force: bool) -> Result<()> {
     let backup = create_backup_file(branches)?;
-    ui::info(&format!("Backup saved to: {}", backup));
+    let branch_word = ui::pluralize_branch(branches.len());
+
+    // Visual separation after confirmation
+    println!();
+    println!("Deleting local {}...", branch_word);
 
     let mut deleted = 0;
     let mut failed = 0;
@@ -254,21 +291,32 @@ fn delete_branches_with_backup(branches: &[branch::Branch], force: bool) -> Resu
     for branch in branches {
         match git::delete_local_branch(&branch.name, force) {
             Ok(()) => {
-                ui::success(&format!("Deleted {}", branch.name));
+                println!("  {} {}", console::style("✓").green(), branch.name);
                 deleted += 1;
             }
             Err(e) => {
-                ui::error(&format!("Failed to delete {}: {}", branch.name, e));
+                println!("  {} {} ({})", console::style("✗").red(), branch.name, e);
                 failed += 1;
             }
         }
     }
 
+    // Summary footer
     println!();
-    ui::info(&format!(
-        "Deleted {} branch(es), {} failed",
-        deleted, failed
-    ));
+    let branch_word = ui::pluralize_branch(deleted);
+    if failed == 0 {
+        ui::success(&format!("Deleted {} local {}", deleted, branch_word));
+    } else {
+        ui::warning(&format!(
+            "Deleted {} local {}, {} failed",
+            deleted, branch_word, failed
+        ));
+    }
+    println!(
+        "  {} Backup: {}",
+        console::style("↪").dim(),
+        console::style(&backup).dim()
+    );
 
     Ok(())
 }
@@ -276,7 +324,11 @@ fn delete_branches_with_backup(branches: &[branch::Branch], force: bool) -> Resu
 /// Delete remote branches and create backup file
 fn delete_remote_branches_with_backup(branches: &[branch::Branch]) -> Result<()> {
     let backup = create_backup_file(branches)?;
-    ui::info(&format!("Backup saved to: {}", backup));
+    let branch_word = ui::pluralize_branch(branches.len());
+
+    // Visual separation after confirmation
+    println!();
+    println!("Deleting remote {}...", branch_word);
 
     let mut deleted = 0;
     let mut failed = 0;
@@ -284,21 +336,32 @@ fn delete_remote_branches_with_backup(branches: &[branch::Branch]) -> Result<()>
     for branch in branches {
         match git::delete_remote_branch(&branch.name) {
             Ok(()) => {
-                ui::success(&format!("Deleted {}", branch.name));
+                println!("  {} {}", console::style("✓").green(), branch.name);
                 deleted += 1;
             }
             Err(e) => {
-                ui::error(&format!("Failed to delete {}: {}", branch.name, e));
+                println!("  {} {} ({})", console::style("✗").red(), branch.name, e);
                 failed += 1;
             }
         }
     }
 
+    // Summary footer
     println!();
-    ui::info(&format!(
-        "Deleted {} remote branch(es), {} failed",
-        deleted, failed
-    ));
+    let branch_word = ui::pluralize_branch(deleted);
+    if failed == 0 {
+        ui::success(&format!("Deleted {} remote {}", deleted, branch_word));
+    } else {
+        ui::warning(&format!(
+            "Deleted {} remote {}, {} failed",
+            deleted, branch_word, failed
+        ));
+    }
+    println!(
+        "  {} Backup: {}",
+        console::style("↪").dim(),
+        console::style(&backup).dim()
+    );
 
     Ok(())
 }
@@ -359,6 +422,7 @@ fn cmd_config(action: ConfigAction) -> Result<()> {
             ui::display_config(
                 config.default_days,
                 &config.protected_branches,
+                &config.exclude_patterns,
                 config.default_branch.as_deref(),
                 &config_path,
             );

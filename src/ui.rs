@@ -8,6 +8,24 @@ use std::time::Duration;
 
 use crate::branch::Branch;
 
+/// Helper to pluralize "branch" correctly
+pub fn pluralize_branch(count: usize) -> &'static str {
+    if count == 1 {
+        "branch"
+    } else {
+        "branches"
+    }
+}
+
+/// Helper to pluralize "Branch" correctly (capitalized)
+pub fn pluralize_branch_cap(count: usize) -> &'static str {
+    if count == 1 {
+        "Branch"
+    } else {
+        "Branches"
+    }
+}
+
 /// Create a spinner with a message
 pub fn spinner(message: &str) -> ProgressBar {
     let spinner = ProgressBar::new_spinner();
@@ -93,21 +111,24 @@ pub fn confirm_local_deletion(branches: &[Branch]) -> bool {
     let total = branches.len();
     let merged_count = branches.iter().filter(|b| b.is_merged).count();
     let unmerged_count = total - merged_count;
+    let branch_word = pluralize_branch(total);
 
     // Build a descriptive prompt
     let summary = if unmerged_count > 0 {
         format!(
-            "{} {} local branches ({} merged, {} unmerged)?",
+            "{} {} local {} ({} merged, {} unmerged)?",
             style("Delete").red().bold(),
             style(total).yellow().bold(),
+            branch_word,
             style(merged_count).green(),
             style(unmerged_count).yellow()
         )
     } else {
         format!(
-            "{} {} local branches (all merged)?",
+            "{} {} local {} (all merged)?",
             style("Delete").yellow().bold(),
-            style(total).cyan().bold()
+            style(total).cyan().bold(),
+            branch_word
         )
     };
 
@@ -165,26 +186,31 @@ pub fn print_dry_run_footer() {
 /// Returns true if user confirms, false otherwise
 pub fn confirm_remote_deletion(branches: &[Branch]) -> bool {
     let count = branches.len();
+    let branch_word = pluralize_branch(count);
 
     println!();
     println!(
         "{}",
-        style("⚠  WARNING: You are about to delete remote branches!")
-            .yellow()
-            .bold()
+        style(format!(
+            "⚠  WARNING: You are about to delete remote {}!",
+            branch_word
+        ))
+        .yellow()
+        .bold()
     );
     println!();
     println!("This action:");
     println!("  • {} easily", style("Cannot be undone").red());
     println!("  • Will {} all team members", style("affect").red());
     println!(
-        "  • Removes branches from origin {}",
+        "  • Removes {} from origin {}",
+        branch_word,
         style("permanently").red()
     );
     println!();
 
     // Simple confirmation text with just the count
-    let expected = format!("delete {} remote branches", count);
+    let expected = format!("delete {} remote {}", count, branch_word);
     println!(
         "To confirm, type exactly: {}",
         style(format!("\"{}\"", expected)).yellow()
@@ -207,6 +233,7 @@ pub fn confirm_remote_deletion(branches: &[Branch]) -> bool {
 pub fn display_config(
     default_days: u32,
     protected_branches: &[String],
+    exclude_patterns: &[String],
     default_branch: Option<&str>,
     config_path: &str,
 ) {
@@ -226,6 +253,11 @@ pub fn display_config(
     table.add_row(vec![
         Cell::new("protected-branches"),
         Cell::new(protected_branches.join(", ")).fg(Color::Cyan),
+    ]);
+
+    table.add_row(vec![
+        Cell::new("exclude-patterns"),
+        Cell::new(exclude_patterns.join(", ")).fg(Color::Cyan),
     ]);
 
     table.add_row(vec![

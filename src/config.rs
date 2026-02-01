@@ -11,6 +11,9 @@ const DEFAULT_DAYS: u32 = 30;
 /// Default protected branches
 const DEFAULT_PROTECTED: &[&str] = &["main", "master", "develop", "staging", "production"];
 
+/// Default exclude patterns (WIP/draft branches)
+const DEFAULT_EXCLUDE_PATTERNS: &[&str] = &["wip/*", "draft/*", "*/wip", "*/draft"];
+
 /// Configuration for deadbranch
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
@@ -19,6 +22,10 @@ pub struct Config {
 
     #[serde(default = "default_protected_branches")]
     pub protected_branches: Vec<String>,
+
+    /// Branch name patterns to exclude (glob-style: wip/*, */draft, etc.)
+    #[serde(default = "default_exclude_patterns")]
+    pub exclude_patterns: Vec<String>,
 
     /// The default branch to check merges against (auto-detected if not set)
     #[serde(default)]
@@ -33,11 +40,19 @@ fn default_protected_branches() -> Vec<String> {
     DEFAULT_PROTECTED.iter().map(|s| s.to_string()).collect()
 }
 
+fn default_exclude_patterns() -> Vec<String> {
+    DEFAULT_EXCLUDE_PATTERNS
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
             default_days: default_days(),
             protected_branches: default_protected_branches(),
+            exclude_patterns: default_exclude_patterns(),
             default_branch: None,
         }
     }
@@ -135,8 +150,15 @@ impl Config {
                     Some(value.to_string())
                 };
             }
+            "exclude-patterns" => {
+                self.exclude_patterns = value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+            }
             _ => {
-                anyhow::bail!("Unknown config key: {}. Valid keys: default-days, protected-branches, default-branch", key);
+                anyhow::bail!("Unknown config key: {}. Valid keys: default-days, protected-branches, default-branch, exclude-patterns", key);
             }
         }
         Ok(())

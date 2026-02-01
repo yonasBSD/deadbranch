@@ -26,13 +26,54 @@ impl Branch {
         protected_branches.iter().any(|p| p == name)
     }
 
-    /// Check if this branch matches WIP/draft patterns
-    pub fn is_wip_or_draft(&self) -> bool {
+    /// Check if this branch matches any exclude pattern (glob-style)
+    /// Supports: "wip/*", "*/draft", "feature/*/temp", etc.
+    pub fn matches_exclude_pattern(&self, patterns: &[String]) -> bool {
         let name = self.short_name();
-        name.starts_with("wip/")
-            || name.starts_with("draft/")
-            || name.ends_with("/wip")
-            || name.ends_with("/draft")
+        patterns
+            .iter()
+            .any(|pattern| Self::glob_match(pattern, name))
+    }
+
+    /// Simple glob matching: supports * as wildcard
+    fn glob_match(pattern: &str, text: &str) -> bool {
+        let parts: Vec<&str> = pattern.split('*').collect();
+
+        if parts.len() == 1 {
+            // No wildcard, exact match
+            return pattern == text;
+        }
+
+        let mut remaining = text;
+
+        for (i, part) in parts.iter().enumerate() {
+            if part.is_empty() {
+                continue;
+            }
+
+            if i == 0 {
+                // First part must be at the start
+                if !remaining.starts_with(part) {
+                    return false;
+                }
+                remaining = &remaining[part.len()..];
+            } else if i == parts.len() - 1 {
+                // Last part must be at the end
+                if !remaining.ends_with(part) {
+                    return false;
+                }
+                remaining = "";
+            } else {
+                // Middle parts can be anywhere
+                if let Some(pos) = remaining.find(part) {
+                    remaining = &remaining[pos + part.len()..];
+                } else {
+                    return false;
+                }
+            }
+        }
+
+        true
     }
 
     /// Get the short name (without origin/ prefix for remote branches)
@@ -67,6 +108,8 @@ pub struct BranchFilter {
     pub merged_only: bool,
     /// Protected branch names to exclude
     pub protected_branches: Vec<String>,
+    /// Glob patterns to exclude (e.g., "wip/*", "*/draft")
+    pub exclude_patterns: Vec<String>,
 }
 
 impl BranchFilter {
@@ -95,8 +138,8 @@ impl BranchFilter {
             return false;
         }
 
-        // Exclude WIP/draft branches
-        if branch.is_wip_or_draft() {
+        // Exclude branches matching exclude patterns
+        if branch.matches_exclude_pattern(&self.exclude_patterns) {
             return false;
         }
 
