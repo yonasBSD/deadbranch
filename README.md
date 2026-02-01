@@ -286,6 +286,16 @@ cargo build --release
 cargo clippy
 ```
 
+## Roadmap
+
+- [ ] `deadbranch restore` command
+- [ ] `deadbranch stats` command
+- [ ] Interactive TUI mode
+- [ ] `--only-mine` flag for personal branches
+- [ ] GitHub/GitLab PR detection
+- [ ] Multiple output formats (JSON, CSV)
+- [ ] Per-repo configuration
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
