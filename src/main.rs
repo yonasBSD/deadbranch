@@ -57,10 +57,11 @@ fn cmd_list(
     let config = Config::load()?;
 
     // Use CLI value if provided, otherwise use config default
-    let min_age = days.unwrap_or(config.default_days);
+    let min_age = days.unwrap_or(config.general.default_days);
 
     // Get default branch for merge detection
     let default_branch = config
+        .branches
         .default_branch
         .clone()
         .unwrap_or_else(|| git::get_default_branch().unwrap_or_else(|_| "main".to_string()));
@@ -79,8 +80,8 @@ fn cmd_list(
         local_only,
         remote_only,
         merged_only,
-        protected_branches: config.protected_branches,
-        exclude_patterns: config.exclude_patterns,
+        protected_branches: config.branches.protected,
+        exclude_patterns: config.branches.exclude_patterns,
     };
 
     let mut branches: Vec<_> = all_branches
@@ -125,10 +126,11 @@ fn cmd_clean(
     let config = Config::load()?;
 
     // Use CLI value if provided, otherwise use config default
-    let min_age = days.unwrap_or(config.default_days);
+    let min_age = days.unwrap_or(config.general.default_days);
 
     // Get default branch for merge detection
     let default_branch = config
+        .branches
         .default_branch
         .clone()
         .unwrap_or_else(|| git::get_default_branch().unwrap_or_else(|_| "main".to_string()));
@@ -143,8 +145,8 @@ fn cmd_clean(
         local_only,
         remote_only,
         merged_only,
-        protected_branches: config.protected_branches.clone(),
-        exclude_patterns: config.exclude_patterns,
+        protected_branches: config.branches.protected.clone(),
+        exclude_patterns: config.branches.exclude_patterns,
     };
 
     // List all branches
@@ -420,10 +422,10 @@ fn cmd_config(action: ConfigAction) -> Result<()> {
                 .unwrap_or_else(|_| "(unknown)".to_string());
 
             ui::display_config(
-                config.default_days,
-                &config.protected_branches,
-                &config.exclude_patterns,
-                config.default_branch.as_deref(),
+                config.general.default_days,
+                &config.branches.protected,
+                &config.branches.exclude_patterns,
+                config.branches.default_branch.as_deref(),
                 &config_path,
             );
         }

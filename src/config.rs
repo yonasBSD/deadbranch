@@ -14,22 +14,56 @@ const DEFAULT_PROTECTED: &[&str] = &["main", "master", "develop", "staging", "pr
 /// Default exclude patterns (WIP/draft branches)
 const DEFAULT_EXCLUDE_PATTERNS: &[&str] = &["wip/*", "draft/*", "*/wip", "*/draft"];
 
-/// Configuration for deadbranch
+/// General settings section
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Config {
+pub struct GeneralConfig {
+    /// Default age threshold (days)
     #[serde(default = "default_days")]
     pub default_days: u32,
+}
 
+impl Default for GeneralConfig {
+    fn default() -> Self {
+        Self {
+            default_days: default_days(),
+        }
+    }
+}
+
+/// Branch-related settings section
+#[derive(Debug, Deserialize, Serialize)]
+pub struct BranchesConfig {
+    /// The default branch to check merges against (auto-detected if not set)
+    #[serde(default)]
+    pub default_branch: Option<String>,
+
+    /// Protected branches (never deleted)
     #[serde(default = "default_protected_branches")]
-    pub protected_branches: Vec<String>,
+    pub protected: Vec<String>,
 
     /// Branch name patterns to exclude (glob-style: wip/*, */draft, etc.)
     #[serde(default = "default_exclude_patterns")]
     pub exclude_patterns: Vec<String>,
+}
 
-    /// The default branch to check merges against (auto-detected if not set)
+impl Default for BranchesConfig {
+    fn default() -> Self {
+        Self {
+            default_branch: None,
+            protected: default_protected_branches(),
+            exclude_patterns: default_exclude_patterns(),
+        }
+    }
+}
+
+/// Configuration for deadbranch
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct Config {
     #[serde(default)]
-    pub default_branch: Option<String>,
+    pub general: GeneralConfig,
+
+    #[serde(default)]
+    pub branches: BranchesConfig,
 }
 
 fn default_days() -> u32 {
@@ -45,17 +79,6 @@ fn default_exclude_patterns() -> Vec<String> {
         .iter()
         .map(|s| s.to_string())
         .collect()
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            default_days: default_days(),
-            protected_branches: default_protected_branches(),
-            exclude_patterns: default_exclude_patterns(),
-            default_branch: None,
-        }
-    }
 }
 
 impl Config {
@@ -129,37 +152,46 @@ impl Config {
     }
 
     /// Set a configuration value by key (accepts multiple values for list types)
+    /// Supports both flat keys (default-days) and dotted keys (general.default-days)
     pub fn set(&mut self, key: &str, values: &[String]) -> Result<()> {
         match key {
-            "default-days" | "days" => {
+            // General section
+            "general.default-days" | "default-days" | "days" => {
                 if values.len() != 1 {
                     anyhow::bail!("default-days expects a single value");
                 }
-                self.default_days = values[0]
+                self.general.default_days = values[0]
                     .parse()
                     .with_context(|| format!("Invalid number: {}", values[0]))?;
             }
-            "protected-branches" => {
+
+            // Branches section
+            "branches.protected" | "protected-branches" => {
                 // Filter out empty strings to allow clearing with ""
-                self.protected_branches =
+                self.branches.protected =
                     values.iter().filter(|s| !s.is_empty()).cloned().collect();
             }
-            "default-branch" => {
+            "branches.default-branch" | "default-branch" => {
                 if values.len() != 1 {
                     anyhow::bail!("default-branch expects a single value");
                 }
-                self.default_branch = if values[0].is_empty() {
+                self.branches.default_branch = if values[0].is_empty() {
                     None
                 } else {
                     Some(values[0].clone())
                 };
             }
-            "exclude-patterns" => {
+            "branches.exclude-patterns" | "exclude-patterns" => {
                 // Filter out empty strings to allow clearing with ""
-                self.exclude_patterns = values.iter().filter(|s| !s.is_empty()).cloned().collect();
+                self.branches.exclude_patterns =
+                    values.iter().filter(|s| !s.is_empty()).cloned().collect();
             }
+
             _ => {
-                anyhow::bail!("Unknown config key: {}. Valid keys: default-days, protected-branches, default-branch, exclude-patterns", key);
+                anyhow::bail!(
+                    "Unknown config key: {}. Valid keys: general.default-days, branches.protected, branches.default-branch, branches.exclude-patterns",
+                    key
+                );
             }
         }
         Ok(())

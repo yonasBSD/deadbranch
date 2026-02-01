@@ -241,13 +241,23 @@ pub fn display_config(
     table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
+        Cell::new("Section").add_attribute(Attribute::Bold),
         Cell::new("Setting").add_attribute(Attribute::Bold),
         Cell::new("Value").add_attribute(Attribute::Bold),
     ]);
 
+    // General section
     table.add_row(vec![
-        Cell::new("default-days"),
+        Cell::new("general").fg(Color::Yellow),
+        Cell::new("default_days"),
         Cell::new(default_days.to_string()).fg(Color::Cyan),
+    ]);
+
+    // Branches section
+    table.add_row(vec![
+        Cell::new("branches").fg(Color::Yellow),
+        Cell::new("default_branch"),
+        Cell::new(default_branch.unwrap_or("(auto-detect)")).fg(Color::Cyan),
     ]);
 
     let protected_display = if protected_branches.is_empty() {
@@ -256,7 +266,8 @@ pub fn display_config(
         protected_branches.join(", ")
     };
     table.add_row(vec![
-        Cell::new("protected-branches"),
+        Cell::new("branches").fg(Color::Yellow),
+        Cell::new("protected"),
         Cell::new(protected_display).fg(Color::Cyan),
     ]);
 
@@ -266,20 +277,17 @@ pub fn display_config(
         exclude_patterns.join(", ")
     };
     table.add_row(vec![
-        Cell::new("exclude-patterns"),
+        Cell::new("branches").fg(Color::Yellow),
+        Cell::new("exclude_patterns"),
         Cell::new(exclude_display).fg(Color::Cyan),
     ]);
 
-    table.add_row(vec![
-        Cell::new("default-branch"),
-        Cell::new(default_branch.unwrap_or("(auto-detect)")).fg(Color::Cyan),
-    ]);
-
-    table.add_row(vec![
-        Cell::new("config-file"),
-        Cell::new(config_path).fg(Color::DarkGrey),
-    ]);
-
     println!("\n{}", style("Configuration:").bold());
-    println!("{table}\n");
+    println!("{table}");
+    println!(
+        "{} {}",
+        style("Config file:").dim(),
+        style(config_path).dim()
+    );
+    println!();
 }
