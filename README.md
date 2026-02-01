@@ -16,17 +16,52 @@
 
 ## Installation
 
-### From source (requires Rust)
+### Quick Install (Linux/macOS)
+
+```bash
+curl -sSf https://raw.githubusercontent.com/armgabrielyan/deadbranch/main/install.sh | sh
+```
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew install armgabrielyan/deadbranch/deadbranch
+```
+
+### npm/npx
+
+```bash
+# Install globally
+npm install -g deadbranch
+
+# Or run directly
+npx deadbranch list
+```
+
+### Cargo (from source)
+
+```bash
+cargo install deadbranch
+```
+
+### Manual Download
+
+Download pre-built binaries from the [GitHub Releases](https://github.com/armgabrielyan/deadbranch/releases) page.
+
+| Platform | Architecture | Download |
+|----------|--------------|----------|
+| Linux | x86_64 (glibc) | `deadbranch-VERSION-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux | x86_64 (musl/static) | `deadbranch-VERSION-x86_64-unknown-linux-musl.tar.gz` |
+| Linux | ARM64 | `deadbranch-VERSION-aarch64-unknown-linux-gnu.tar.gz` |
+| macOS | Intel | `deadbranch-VERSION-x86_64-apple-darwin.tar.gz` |
+| macOS | Apple Silicon | `deadbranch-VERSION-aarch64-apple-darwin.tar.gz` |
+| Windows | x86_64 | `deadbranch-VERSION-x86_64-pc-windows-msvc.zip` |
+
+### Build from Source
 
 ```bash
 git clone https://github.com/armgabrielyan/deadbranch
 cd deadbranch
-cargo install --path .
-```
-
-### Build from source
-
-```bash
 cargo build --release
 # Binary will be at target/release/deadbranch
 ```

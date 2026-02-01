@@ -1,0 +1,40 @@
+{
+  "name": "deadbranch",
+  "version": "0.1.0",
+  "description": "Clean up stale git branches safely",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/armgabrielyan/deadbranch.git"
+  },
+  "author": "Armen Gabrielyan",
+  "license": "MIT",
+  "keywords": [
+    "git",
+    "cli",
+    "branches",
+    "cleanup",
+    "devtools"
+  ],
+  "bin": {
+    "deadbranch": "bin/deadbranch"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

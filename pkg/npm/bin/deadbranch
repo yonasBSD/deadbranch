@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+
+/**
+ * Binary wrapper for deadbranch
+ * This script runs the actual binary with all passed arguments
+ */
+
+const { spawn } = require('child_process');
+const path = require('path');
+const os = require('os');
+
+const binaryExt = os.platform() === 'win32' ? '.exe' : '';
+const binaryPath = path.join(__dirname, 'deadbranch' + binaryExt);
+
+const child = spawn(binaryPath, process.argv.slice(2), {
+  stdio: 'inherit',
+  env: process.env,
+});
+
+child.on('exit', (code) => {
+  process.exit(code || 0);
+});
