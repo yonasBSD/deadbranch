@@ -4,6 +4,10 @@
 
 `deadbranch` helps you identify and remove old, unused git branches that clutter your repository. It's designed to be **safe by default** — protecting important branches and requiring explicit confirmation before any deletion.
 
+## Demo
+
+![deadbranch demo](demo.gif)
+
 ## Features
 
 - **List stale branches** — Find branches older than N days (default: 30)
