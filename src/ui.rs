@@ -88,7 +88,7 @@ pub fn display_branches(branches: &[Branch], title: &str) {
             Cell::new(branch.format_age()),
             status,
             branch_type,
-            Cell::new(&branch.last_commit_date.format("%Y-%m-%d").to_string()).fg(Color::DarkGrey),
+            Cell::new(branch.last_commit_date.format("%Y-%m-%d").to_string()).fg(Color::DarkGrey),
         ]);
     }
 
