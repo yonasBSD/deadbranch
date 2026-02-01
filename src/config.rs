@@ -44,15 +44,40 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Get the path to the config file
-    pub fn config_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir()
-            .context("Could not determine config directory")?
-            .join("deadbranch");
-        Ok(config_dir.join("config.toml"))
+    /// Get the main deadbranch directory (~/.deadbranch)
+    pub fn deadbranch_dir() -> Result<PathBuf> {
+        let home = dirs::home_dir().context("Could not determine home directory")?;
+        Ok(home.join(".deadbranch"))
     }
 
-    /// Load config from file, or return defaults if file doesn't exist
+    /// Get the path to the config file (~/.deadbranch/config.toml)
+    pub fn config_path() -> Result<PathBuf> {
+        Ok(Self::deadbranch_dir()?.join("config.toml"))
+    }
+
+    /// Get the backups directory (~/.deadbranch/backups)
+    pub fn backups_dir() -> Result<PathBuf> {
+        Ok(Self::deadbranch_dir()?.join("backups"))
+    }
+
+    /// Get the backup directory for a specific repository
+    pub fn repo_backup_dir(repo_name: &str) -> Result<PathBuf> {
+        Ok(Self::backups_dir()?.join(repo_name))
+    }
+
+    /// Get the current repository name (uses directory name)
+    pub fn get_repo_name() -> String {
+        std::env::current_dir()
+            .ok()
+            .and_then(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "unknown-repo".to_string())
+    }
+
+    /// Load config from file, or create default config if file doesn't exist
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
 
@@ -63,7 +88,10 @@ impl Config {
                 .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
             Ok(config)
         } else {
-            Ok(Config::default())
+            // Auto-create config file with defaults on first use
+            let config = Config::default();
+            config.save()?;
+            Ok(config)
         }
     }
 

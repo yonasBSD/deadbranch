@@ -304,17 +304,30 @@ fn delete_remote_branches_with_backup(branches: &[branch::Branch]) -> Result<()>
 }
 
 /// Create a backup file with branch SHAs for potential restoration
+/// Saves to ~/.deadbranch/backups/<repo-name>/backup-<timestamp>.txt
 fn create_backup_file(branches: &[branch::Branch]) -> Result<String> {
-    let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
-    let filename = format!("deadbranch-backup-{}.txt", timestamp);
+    let repo_name = Config::get_repo_name();
+    let backup_dir = Config::repo_backup_dir(&repo_name)?;
 
-    let mut file = fs::File::create(&filename)?;
+    // Create backup directory if it doesn't exist
+    fs::create_dir_all(&backup_dir)?;
 
-    writeln!(file, "# deadbranch backup - {}", Utc::now().to_rfc3339())?;
+    let timestamp = Utc::now().format("%Y%m%d-%H%M%S");
+    let filename = format!("backup-{}.txt", timestamp);
+    let backup_path = backup_dir.join(&filename);
+
+    let mut file = fs::File::create(&backup_path)?;
+
+    writeln!(file, "# deadbranch backup")?;
+    writeln!(file, "# Created: {}", Utc::now().to_rfc3339())?;
+    writeln!(file, "# Repository: {}", repo_name)?;
     writeln!(
         file,
-        "# To restore a branch, run the git command shown below"
+        "# Working directory: {}",
+        std::env::current_dir()?.display()
     )?;
+    writeln!(file, "#")?;
+    writeln!(file, "# To restore a branch, run the git command shown")?;
     writeln!(file, "#")?;
     writeln!(file)?;
 
@@ -331,7 +344,7 @@ fn create_backup_file(branches: &[branch::Branch]) -> Result<String> {
         writeln!(file)?;
     }
 
-    Ok(filename)
+    Ok(backup_path.display().to_string())
 }
 
 /// Handle config subcommands
