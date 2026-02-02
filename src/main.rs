@@ -190,19 +190,6 @@ fn cmd_clean(
             );
             ui::display_branches(&remote_branches, &title);
         }
-        if !remote_branches.is_empty() {
-            let title = format!(
-                "Remote {} to Delete:",
-                ui::pluralize_branch(remote_branches.len())
-                    .to_uppercase()
-                    .chars()
-                    .next()
-                    .unwrap()
-                    .to_string()
-                    + &ui::pluralize_branch(remote_branches.len())[1..]
-            );
-            ui::display_branches(&remote_branches, &title);
-        }
 
         ui::print_dry_run_header();
 
