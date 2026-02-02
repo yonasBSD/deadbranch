@@ -8,22 +8,23 @@ use std::time::Duration;
 
 use crate::branch::Branch;
 
+/// Generic pluralization helper
+pub fn pluralize<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
+    if count == 1 {
+        singular
+    } else {
+        plural
+    }
+}
+
 /// Helper to pluralize "branch" correctly
 pub fn pluralize_branch(count: usize) -> &'static str {
-    if count == 1 {
-        "branch"
-    } else {
-        "branches"
-    }
+    pluralize(count, "branch", "branches")
 }
 
 /// Helper to pluralize "Branch" correctly (capitalized)
 pub fn pluralize_branch_cap(count: usize) -> &'static str {
-    if count == 1 {
-        "Branch"
-    } else {
-        "Branches"
-    }
+    pluralize(count, "Branch", "Branches")
 }
 
 /// Create a spinner with a message
