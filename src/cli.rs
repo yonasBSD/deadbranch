@@ -57,6 +57,10 @@ pub enum Commands {
         /// Only delete remote branches
         #[arg(long, conflicts_with = "local")]
         remote: bool,
+
+        /// Skip confirmation prompts (useful for scripts)
+        #[arg(short, long)]
+        yes: bool,
     },
 
     /// Manage configuration

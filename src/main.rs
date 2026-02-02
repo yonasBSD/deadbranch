@@ -46,7 +46,8 @@ fn main() -> Result<()> {
             dry_run,
             local,
             remote,
-        } => cmd_clean(days, merged, force, dry_run, local, remote),
+            yes,
+        } => cmd_clean(days, merged, force, dry_run, local, remote, yes),
 
         Commands::Config { action } => cmd_config(action),
 
@@ -131,6 +132,7 @@ fn cmd_clean(
     dry_run: bool,
     local_only: bool,
     remote_only: bool,
+    skip_confirm: bool,
 ) -> Result<()> {
     let config = Config::load()?;
 
@@ -230,7 +232,7 @@ fn cmd_clean(
         );
         ui::display_branches(&local_branches, &title);
 
-        if ui::confirm_local_deletion(&local_branches) {
+        if skip_confirm || ui::confirm_local_deletion(&local_branches) {
             delete_branches_with_backup(&local_branches, force)?;
         } else {
             println!();
@@ -265,7 +267,7 @@ fn cmd_clean(
         );
         ui::display_branches(&remote_branches, &title);
 
-        if ui::confirm_remote_deletion(&remote_branches) {
+        if skip_confirm || ui::confirm_remote_deletion(&remote_branches) {
             delete_remote_branches_with_backup(&remote_branches)?;
         } else {
             println!();
