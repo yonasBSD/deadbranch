@@ -4,8 +4,10 @@ use comfy_table::{presets::UTF8_FULL, Attribute, Cell, Color, Table};
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::HashMap;
 use std::time::Duration;
 
+use crate::backup::BackupInfo;
 use crate::branch::Branch;
 
 /// Generic pluralization helper
@@ -289,6 +291,120 @@ pub fn display_config(
         "{} {}",
         style("Config file:").dim(),
         style(config_path).dim()
+    );
+    println!();
+}
+
+/// Display backups for a single repository
+pub fn display_repo_backups(repo_name: &str, backups: &[BackupInfo]) {
+    if backups.is_empty() {
+        println!(
+            "{}",
+            style(format!("No backups found for '{}'.", repo_name)).dim()
+        );
+        return;
+    }
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+
+    table.set_header(vec![
+        Cell::new("#").add_attribute(Attribute::Bold),
+        Cell::new("Backup").add_attribute(Attribute::Bold),
+        Cell::new("Age").add_attribute(Attribute::Bold),
+        Cell::new("Branches").add_attribute(Attribute::Bold),
+    ]);
+
+    for (i, backup) in backups.iter().enumerate() {
+        table.add_row(vec![
+            Cell::new((i + 1).to_string()).fg(Color::DarkGrey),
+            Cell::new(backup.filename()),
+            Cell::new(backup.format_age()).fg(Color::Cyan),
+            Cell::new(backup.branch_count.to_string()).fg(Color::Yellow),
+        ]);
+    }
+
+    println!(
+        "\n{}",
+        style(format!("Backups for '{}':", repo_name)).bold()
+    );
+    println!("{table}");
+
+    // Show restore hint
+    println!();
+    println!("{}", style("To restore a branch:").dim());
+    println!(
+        "  {}",
+        style("deadbranch backup restore <branch-name>").dim()
+    );
+    println!(
+        "  {}",
+        style("deadbranch backup restore <branch-name> --from <backup-file>").dim()
+    );
+    println!();
+}
+
+/// Display all backups as a summary grouped by repository
+pub fn display_all_backups(all_backups: &HashMap<String, Vec<BackupInfo>>) {
+    if all_backups.is_empty() {
+        println!("{}", style("No backups found.").dim());
+        return;
+    }
+
+    // Sort repositories alphabetically
+    let mut repos: Vec<_> = all_backups.keys().collect();
+    repos.sort();
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+
+    table.set_header(vec![
+        Cell::new("#").add_attribute(Attribute::Bold),
+        Cell::new("Repository").add_attribute(Attribute::Bold),
+        Cell::new("Backups").add_attribute(Attribute::Bold),
+        Cell::new("Latest").add_attribute(Attribute::Bold),
+        Cell::new("Oldest").add_attribute(Attribute::Bold),
+    ]);
+
+    let mut total_backups = 0;
+
+    for (i, repo_name) in repos.iter().enumerate() {
+        let backups = &all_backups[*repo_name];
+        total_backups += backups.len();
+
+        // Backups are already sorted newest first
+        let latest_age = backups.first().map(|b| b.format_age()).unwrap_or_default();
+        let oldest_age = backups.last().map(|b| b.format_age()).unwrap_or_default();
+
+        table.add_row(vec![
+            Cell::new((i + 1).to_string()).fg(Color::DarkGrey),
+            Cell::new(repo_name.as_str()).fg(Color::Yellow),
+            Cell::new(backups.len().to_string()).fg(Color::Yellow),
+            Cell::new(latest_age).fg(Color::Cyan),
+            Cell::new(oldest_age).fg(Color::DarkGrey),
+        ]);
+    }
+
+    println!("\n{}", style("All backups:").bold());
+    println!("{table}");
+
+    // Summary
+    println!(
+        "\n{} {} {} across {} {}",
+        style("Total:").dim(),
+        style(total_backups).cyan(),
+        pluralize(total_backups, "backup", "backups"),
+        style(repos.len()).cyan(),
+        pluralize(repos.len(), "repository", "repositories")
+    );
+
+    // Hint
+    println!();
+    println!("{}", style("To see details for a repository:").dim());
+    println!("  {}", style("deadbranch backup list --repo <name>").dim());
+    println!(
+        "  {}",
+        style("deadbranch backup list --current  (for current repo)").dim()
     );
     println!();
 }

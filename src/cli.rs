@@ -64,6 +64,12 @@ pub enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+
+    /// Manage backups
+    Backup {
+        #[command(subcommand)]
+        action: BackupAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -87,4 +93,18 @@ pub enum ConfigAction {
 
     /// Reset configuration to defaults
     Reset,
+}
+
+#[derive(Subcommand)]
+pub enum BackupAction {
+    /// List available backups
+    List {
+        /// Only show backups for current repository
+        #[arg(long, conflicts_with = "repo")]
+        current: bool,
+
+        /// Show backups for a specific repository by name
+        #[arg(long)]
+        repo: Option<String>,
+    },
 }

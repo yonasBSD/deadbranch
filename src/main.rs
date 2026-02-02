@@ -1,5 +1,6 @@
 //! deadbranch - Clean up stale git branches safely
 
+mod backup;
 mod branch;
 mod cli;
 mod config;
@@ -14,14 +15,18 @@ use std::fs;
 use std::io::Write;
 
 use branch::BranchFilter;
-use cli::{Cli, Commands, ConfigAction};
+use cli::{BackupAction, Cli, Commands, ConfigAction};
 use config::Config;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Check if we're in a git repository (except for config commands)
-    if !matches!(cli.command, Commands::Config { .. }) && !git::is_git_repository() {
+    // Check if we're in a git repository (except for config and backup commands)
+    if !matches!(
+        cli.command,
+        Commands::Config { .. } | Commands::Backup { .. }
+    ) && !git::is_git_repository()
+    {
         ui::error("Not a git repository (or any parent up to mount point)");
         std::process::exit(1);
     }
@@ -44,6 +49,8 @@ fn main() -> Result<()> {
         } => cmd_clean(days, merged, force, dry_run, local, remote),
 
         Commands::Config { action } => cmd_config(action),
+
+        Commands::Backup { action } => cmd_backup(action),
     }
 }
 
@@ -481,6 +488,58 @@ fn cmd_config(action: ConfigAction) -> Result<()> {
                 ui::success("Configuration reset to defaults");
             } else {
                 ui::info("Cancelled");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle backup subcommands
+fn cmd_backup(action: BackupAction) -> Result<()> {
+    match action {
+        BackupAction::List { current, repo } => {
+            // Determine which repo to show (if any specific one)
+            let target_repo = if current {
+                // Check if we're in a git repo for --current
+                if !git::is_git_repository() {
+                    ui::error("Not a git repository (or any parent up to mount point)");
+                    ui::info("Use 'deadbranch backup list' without --current to see all backups.");
+                    std::process::exit(1);
+                }
+                Some(Config::get_repo_name())
+            } else {
+                repo
+            };
+
+            if let Some(repo_name) = target_repo {
+                // Show detailed view for specific repo
+                let backups = backup::list_repo_backups(&repo_name)?;
+
+                if backups.is_empty() {
+                    ui::info(&format!("No backups found for repository '{}'", repo_name));
+                    println!();
+                    println!(
+                        "  {} Backups are created automatically when running 'deadbranch clean'.",
+                        console::style("↪").dim()
+                    );
+                } else {
+                    ui::display_repo_backups(&repo_name, &backups);
+                }
+            } else {
+                // Show summary of all repos
+                let all_backups = backup::list_all_backups()?;
+
+                if all_backups.is_empty() {
+                    ui::info("No backups found.");
+                    println!();
+                    println!(
+                        "  {} Backups are created automatically when running 'deadbranch clean'.",
+                        console::style("↪").dim()
+                    );
+                } else {
+                    ui::display_all_backups(&all_backups);
+                }
             }
         }
     }
