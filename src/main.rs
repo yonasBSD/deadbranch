@@ -72,7 +72,9 @@ fn cmd_list(
     ));
 
     // List all branches
+    let spinner = ui::spinner("Loading branches...");
     let all_branches = git::list_branches(&default_branch)?;
+    spinner.finish_and_clear();
 
     // Filter branches
     let filter = BranchFilter {
@@ -150,7 +152,9 @@ fn cmd_clean(
     };
 
     // List all branches
+    let spinner = ui::spinner("Loading branches...");
     let all_branches = git::list_branches(&default_branch)?;
+    spinner.finish_and_clear();
 
     // Filter branches
     let mut branches: Vec<_> = all_branches
