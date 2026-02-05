@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::backup::BackupInfo;
+use crate::backup::{BackupBranchEntry, RestoreError, RestoreResult, SkippedLine};
 use crate::branch::Branch;
 
 /// Generic pluralization helper
@@ -406,5 +407,210 @@ pub fn display_all_backups(all_backups: &HashMap<String, Vec<BackupInfo>>) {
         "  {}",
         style("deadbranch backup list --current  (for current repo)").dim()
     );
+    println!();
+}
+
+/// Display restore success message
+pub fn display_restore_success(result: &RestoreResult) {
+    let short_sha = &result.commit_sha[..8.min(result.commit_sha.len())];
+    let renamed = result.original_name != result.restored_name;
+    let overwrote = result.overwrote_existing;
+
+    let suffix = if overwrote {
+        format!(" {}", style("(overwrote existing)").dim())
+    } else {
+        String::new()
+    };
+
+    if renamed {
+        // Restored with different name (--as flag)
+        println!(
+            "{} Restored branch '{}' as '{}' at commit {}{}",
+            style("✓").green().bold(),
+            style(&result.original_name).cyan(),
+            style(&result.restored_name).cyan().bold(),
+            style(short_sha).yellow(),
+            suffix
+        );
+    } else {
+        // Normal restore (same name)
+        println!(
+            "{} Restored branch '{}' at commit {}{}",
+            style("✓").green().bold(),
+            style(&result.restored_name).cyan().bold(),
+            style(short_sha).yellow(),
+            suffix
+        );
+    }
+}
+
+/// Display restore error with helpful suggestions
+pub fn display_restore_error(err: &RestoreError, branch_name: &str) {
+    match err {
+        RestoreError::BranchExists { branch_name } => {
+            error(&format!("Branch '{}' already exists", branch_name));
+            println!();
+            println!("To overwrite it, use {}:", style("--force").yellow());
+            println!(
+                "  {}",
+                style(format!("deadbranch backup restore {} --force", branch_name)).dim()
+            );
+            println!();
+            println!("To restore with a different name:");
+            println!(
+                "  {}",
+                style(format!(
+                    "deadbranch backup restore {} --as {}-restored",
+                    branch_name, branch_name
+                ))
+                .dim()
+            );
+        }
+
+        RestoreError::CommitNotFound {
+            branch_name,
+            commit_sha,
+        } => {
+            let short_sha = &commit_sha[..8.min(commit_sha.len())];
+            error(&format!(
+                "Cannot restore '{}': commit {} no longer exists",
+                branch_name, short_sha
+            ));
+            println!("  {}", style("(Git may have garbage collected it)").dim());
+            println!();
+            println!(
+                "{}",
+                style("Tip: Try restoring from an older backup with --from").dim()
+            );
+            println!(
+                "     {}",
+                style("Run 'git fsck --unreachable' to check for dangling commits").dim()
+            );
+        }
+
+        RestoreError::BranchNotInBackup {
+            branch_name: _,
+            available_branches,
+            skipped_lines,
+        } => {
+            error(&format!("Branch '{}' not found in backup", branch_name));
+            println!();
+
+            // Show warning about skipped/corrupted lines first
+            if !skipped_lines.is_empty() {
+                display_skipped_lines(skipped_lines);
+            }
+
+            if !available_branches.is_empty() {
+                display_available_branches(available_branches);
+            } else if !skipped_lines.is_empty() {
+                // No valid entries and we have skipped lines - the backup might be corrupted
+                println!(
+                    "{}",
+                    style("No valid branch entries found in backup.").yellow()
+                );
+                println!();
+                println!(
+                    "{}",
+                    style("The backup file may be corrupted. Try a different backup:").dim()
+                );
+                println!("  {}", style("deadbranch backup list --current").dim());
+            }
+        }
+
+        RestoreError::NoBackupsFound { repo_name } => {
+            error(&format!("No backups found for repository '{}'", repo_name));
+            println!();
+            println!(
+                "  {} Backups are created automatically when running 'deadbranch clean'.",
+                style("↪").dim()
+            );
+        }
+
+        RestoreError::BackupCorrupted { message } => {
+            error("Backup file is corrupted or invalid format");
+            println!("  {}", style(message).dim());
+            println!();
+            println!("Try a different backup:");
+            println!("  {}", style("deadbranch backup list --current").dim());
+        }
+
+        RestoreError::Other(e) => {
+            error(&format!("Failed to restore branch: {}", e));
+        }
+    }
+}
+
+/// Display available branches in a table format
+fn display_available_branches(branches: &[BackupBranchEntry]) {
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+
+    table.set_header(vec![
+        Cell::new("Branch").add_attribute(Attribute::Bold),
+        Cell::new("Commit").add_attribute(Attribute::Bold),
+    ]);
+
+    // Show up to 10 branches
+    let display_count = branches.len().min(10);
+    for entry in branches.iter().take(display_count) {
+        let short_sha = &entry.commit_sha[..8.min(entry.commit_sha.len())];
+        table.add_row(vec![
+            Cell::new(&entry.name).fg(Color::Cyan),
+            Cell::new(short_sha).fg(Color::Yellow),
+        ]);
+    }
+
+    println!(
+        "{}",
+        style(format!(
+            "Available {} in this backup:",
+            pluralize_branch(branches.len())
+        ))
+        .dim()
+    );
+    println!("{table}");
+
+    if branches.len() > 10 {
+        println!(
+            "  {} ... and {} more",
+            style("↪").dim(),
+            branches.len() - 10
+        );
+    }
+    println!();
+}
+
+/// Display warning about skipped/corrupted lines in backup file
+fn display_skipped_lines(skipped: &[SkippedLine]) {
+    let count = skipped.len();
+    let line_word = pluralize(count, "line", "lines");
+
+    println!(
+        "{} {} {} in backup file:",
+        style("⚠").yellow().bold(),
+        style(format!("{} corrupted", count)).yellow(),
+        line_word
+    );
+
+    // Show up to 3 skipped lines as examples
+    for line in skipped.iter().take(3) {
+        // Truncate long lines for display
+        let display_content = if line.content.len() > 60 {
+            format!("{}...", &line.content[..57])
+        } else {
+            line.content.clone()
+        };
+        println!(
+            "  {} Line {}: {}",
+            style("→").dim(),
+            style(line.line_number).yellow(),
+            style(display_content).dim()
+        );
+    }
+
+    if count > 3 {
+        println!("  {} ... and {} more", style("→").dim(), count - 3);
+    }
     println!();
 }

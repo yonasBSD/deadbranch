@@ -544,6 +544,29 @@ fn cmd_backup(action: BackupAction) -> Result<()> {
                 }
             }
         }
+
+        BackupAction::Restore {
+            branch,
+            from,
+            r#as,
+            force,
+        } => {
+            // Restore requires being in a git repository
+            if !git::is_git_repository() {
+                ui::error("Not a git repository (or any parent up to mount point)");
+                std::process::exit(1);
+            }
+
+            match backup::restore_branch(&branch, from.as_deref(), r#as.as_deref(), force) {
+                Ok(result) => {
+                    ui::display_restore_success(&result);
+                }
+                Err(e) => {
+                    ui::display_restore_error(&e, &branch);
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 
     Ok(())

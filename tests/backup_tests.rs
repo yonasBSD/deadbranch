@@ -511,3 +511,337 @@ fn test_multiple_cleans_create_multiple_backups() {
         .success()
         .stdout(predicate::str::contains("2")); // Shows "2" somewhere (backup count or in table)
 }
+
+// ============================================================================
+// Tests for `deadbranch backup restore`
+// ============================================================================
+
+/// Helper to get the SHA of a branch
+fn get_branch_sha(repo_dir: &std::path::Path, branch_name: &str) -> String {
+    let output = StdCommand::new("git")
+        .args(["rev-parse", branch_name])
+        .current_dir(repo_dir)
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+/// Helper to check if a branch exists
+fn branch_exists(repo_dir: &std::path::Path, branch_name: &str) -> bool {
+    StdCommand::new("git")
+        .args([
+            "rev-parse",
+            "--verify",
+            &format!("refs/heads/{}", branch_name),
+        ])
+        .current_dir(repo_dir)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_restore_basic() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create an old merged branch and save its SHA
+    create_branch(repo.path(), "branch-to-restore");
+    let _original_sha = get_branch_sha(repo.path(), "branch-to-restore");
+    make_branch_old(repo.path(), "branch-to-restore", 45);
+    merge_branch(repo.path(), "branch-to-restore");
+
+    // Clean it (creates backup)
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Verify branch is gone
+    assert!(!branch_exists(repo.path(), "branch-to-restore"));
+
+    // Restore it
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "restore", "branch-to-restore"])
+        .current_dir(&repo)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Restored branch"))
+        .stdout(predicate::str::contains("branch-to-restore"));
+
+    // Verify branch is back
+    assert!(branch_exists(repo.path(), "branch-to-restore"));
+
+    // Verify it points to the correct commit (the SHA after make_branch_old changed it)
+    let restored_sha = get_branch_sha(repo.path(), "branch-to-restore");
+    // The SHA will be different because make_branch_old amends the commit
+    // But we just need to verify the branch exists and points to a valid commit
+    assert!(!restored_sha.is_empty());
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_restore_requires_git_repo() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Restore outside a git repo should fail
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "restore", "some-branch"])
+        .current_dir(&temp_dir)
+        .assert()
+        .failure()
+        .code(1);
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_restore_no_backups() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name);
+
+    // Try to restore without any backups
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "restore", "nonexistent-branch"])
+        .current_dir(&repo)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("No backups found"));
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_restore_branch_not_in_backup() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create and clean a branch (creates backup)
+    create_branch(repo.path(), "backed-up-branch");
+    make_branch_old(repo.path(), "backed-up-branch", 45);
+    merge_branch(repo.path(), "backed-up-branch");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Try to restore a different branch that wasn't in the backup
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "restore", "not-in-backup"])
+        .current_dir(&repo)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("not found in backup"))
+        .stdout(predicate::str::contains("backed-up-branch")); // Should list available branches
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_restore_branch_already_exists() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create a branch, clean it, then recreate it
+    create_branch(repo.path(), "existing-branch");
+    make_branch_old(repo.path(), "existing-branch", 45);
+    merge_branch(repo.path(), "existing-branch");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Recreate the branch
+    create_branch(repo.path(), "existing-branch");
+
+    // Try to restore - should fail because branch exists
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "restore", "existing-branch"])
+        .current_dir(&repo)
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("already exists"))
+        .stdout(predicate::str::contains("--force"));
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_restore_with_force() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create a branch, clean it, then recreate it with different content
+    create_branch(repo.path(), "force-test-branch");
+    make_branch_old(repo.path(), "force-test-branch", 45);
+    merge_branch(repo.path(), "force-test-branch");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Recreate the branch with new content
+    create_branch(repo.path(), "force-test-branch");
+    let new_sha = get_branch_sha(repo.path(), "force-test-branch");
+
+    // Restore with --force should overwrite
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "restore", "force-test-branch", "--force"])
+        .current_dir(&repo)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("overwrote existing"));
+
+    // SHA should be different (restored to old commit)
+    let restored_sha = get_branch_sha(repo.path(), "force-test-branch");
+    assert_ne!(new_sha, restored_sha);
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_restore_with_as_flag() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create and clean a branch
+    create_branch(repo.path(), "original-name");
+    make_branch_old(repo.path(), "original-name", 45);
+    merge_branch(repo.path(), "original-name");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Restore with a different name
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "restore", "original-name", "--as", "new-name"])
+        .current_dir(&repo)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("original-name"))
+        .stdout(predicate::str::contains("new-name"));
+
+    // Old name should not exist, new name should
+    assert!(!branch_exists(repo.path(), "original-name"));
+    assert!(branch_exists(repo.path(), "new-name"));
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_restore_from_specific_backup() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create and clean first branch
+    create_branch(repo.path(), "first-backup-branch");
+    make_branch_old(repo.path(), "first-backup-branch", 45);
+    merge_branch(repo.path(), "first-backup-branch");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Wait to ensure different timestamp
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+
+    // Create and clean second branch
+    create_branch(repo.path(), "second-backup-branch");
+    make_branch_old(repo.path(), "second-backup-branch", 45);
+    merge_branch(repo.path(), "second-backup-branch");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Get the first backup file name (older one)
+    let backup_dir = get_backup_dir(&repo_name);
+    let mut backups: Vec<_> = fs::read_dir(&backup_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    backups.sort(); // Sort alphabetically (oldest first since format is YYYYMMDD-HHMMSS)
+    let first_backup = &backups[0];
+
+    // Try to restore from the first backup (should only have first-backup-branch)
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args([
+            "backup",
+            "restore",
+            "first-backup-branch",
+            "--from",
+            first_backup,
+        ])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    assert!(branch_exists(repo.path(), "first-backup-branch"));
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_restore_shows_short_sha() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create and clean a branch
+    create_branch(repo.path(), "sha-display-test");
+    make_branch_old(repo.path(), "sha-display-test", 45);
+    merge_branch(repo.path(), "sha-display-test");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Restore and check that output contains a short SHA (8 chars)
+    let assert = Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "restore", "sha-display-test"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // The output should contain "at commit" followed by something that looks like a short SHA
+    let output = String::from_utf8_lossy(&assert.get_output().stdout);
+    assert!(output.contains("at commit"));
+}

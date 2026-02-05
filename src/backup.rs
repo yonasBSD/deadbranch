@@ -5,7 +5,8 @@ use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::config::Config;
 
@@ -216,6 +217,317 @@ pub fn list_repo_backups(repo_name: &str) -> Result<Vec<BackupInfo>> {
     backups.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
     Ok(backups)
+}
+
+/// Information about a branch entry in a backup file
+#[derive(Debug, Clone)]
+pub struct BackupBranchEntry {
+    /// The branch name (as it would be restored)
+    pub name: String,
+    /// The commit SHA the branch pointed to
+    pub commit_sha: String,
+}
+
+/// Information about a skipped/corrupted line in a backup file
+#[derive(Debug, Clone)]
+pub struct SkippedLine {
+    /// Line number (1-based)
+    pub line_number: usize,
+    /// The content of the line
+    pub content: String,
+}
+
+/// Result of parsing a backup file
+#[derive(Debug)]
+pub struct ParsedBackup {
+    /// Successfully parsed branch entries
+    pub entries: Vec<BackupBranchEntry>,
+    /// Lines that were skipped due to corruption/malformation
+    pub skipped_lines: Vec<SkippedLine>,
+}
+
+/// Result of a successful restore operation
+#[derive(Debug)]
+pub struct RestoreResult {
+    /// The original branch name from the backup
+    pub original_name: String,
+    /// The name it was restored as (may differ if --as was used)
+    pub restored_name: String,
+    /// The commit SHA the branch now points to
+    pub commit_sha: String,
+    /// Whether an existing branch was overwritten
+    pub overwrote_existing: bool,
+}
+
+/// Error type for restore failures
+#[derive(Debug)]
+pub enum RestoreError {
+    /// Branch already exists and --force was not specified
+    BranchExists { branch_name: String },
+    /// The commit SHA no longer exists (garbage collected)
+    CommitNotFound {
+        branch_name: String,
+        commit_sha: String,
+    },
+    /// Branch not found in the backup file
+    BranchNotInBackup {
+        branch_name: String,
+        available_branches: Vec<BackupBranchEntry>,
+        skipped_lines: Vec<SkippedLine>,
+    },
+    /// No backups exist for the repository
+    NoBackupsFound { repo_name: String },
+    /// Backup file is corrupted or invalid
+    BackupCorrupted { message: String },
+    /// Other git or IO errors
+    Other(anyhow::Error),
+}
+
+impl std::fmt::Display for RestoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RestoreError::BranchExists { branch_name } => {
+                write!(f, "Branch '{}' already exists", branch_name)
+            }
+            RestoreError::CommitNotFound {
+                branch_name,
+                commit_sha,
+            } => {
+                write!(
+                    f,
+                    "Cannot restore '{}': commit {} no longer exists",
+                    branch_name, commit_sha
+                )
+            }
+            RestoreError::BranchNotInBackup { branch_name, .. } => {
+                write!(f, "Branch '{}' not found in backup", branch_name)
+            }
+            RestoreError::NoBackupsFound { repo_name } => {
+                write!(f, "No backups found for repository '{}'", repo_name)
+            }
+            RestoreError::BackupCorrupted { message } => {
+                write!(f, "Backup file is corrupted: {}", message)
+            }
+            RestoreError::Other(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for RestoreError {}
+
+/// Parse a backup file and extract branch entries
+///
+/// The backup format has lines like:
+/// ```
+/// # feature/old-api
+/// git branch feature/old-api a1b2c3d4...
+/// ```
+///
+/// Lines that don't match the expected format (but aren't comments/empty) are
+/// tracked as skipped lines rather than causing a parse failure.
+pub fn parse_backup_file(path: &Path) -> Result<ParsedBackup, RestoreError> {
+    let file = fs::File::open(path).map_err(|e| RestoreError::Other(e.into()))?;
+    let reader = std::io::BufReader::new(file);
+
+    let mut entries = Vec::new();
+    let mut skipped_lines = Vec::new();
+    let mut found_header = false;
+
+    for (line_num, line) in reader.lines().enumerate() {
+        let line = line.map_err(|e| RestoreError::Other(e.into()))?;
+
+        // Check for valid header on first non-empty line
+        if line_num == 0 {
+            if !line.starts_with("# deadbranch backup") {
+                return Err(RestoreError::BackupCorrupted {
+                    message: format!(
+                        "Invalid header at line 1. Expected '# deadbranch backup', found: '{}'",
+                        line
+                    ),
+                });
+            }
+            found_header = true;
+            continue;
+        }
+
+        // Skip comments and empty lines
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+
+        // Parse "git branch <name> <sha>" lines
+        if line.starts_with("git branch ") {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 4 {
+                // parts[0] = "git", parts[1] = "branch", parts[2] = name, parts[3] = sha
+                entries.push(BackupBranchEntry {
+                    name: parts[2].to_string(),
+                    commit_sha: parts[3].to_string(),
+                });
+            } else {
+                // Malformed "git branch" line - track as skipped
+                skipped_lines.push(SkippedLine {
+                    line_number: line_num + 1,
+                    content: line,
+                });
+            }
+        } else {
+            // Line doesn't match expected format - track as skipped
+            skipped_lines.push(SkippedLine {
+                line_number: line_num + 1,
+                content: line,
+            });
+        }
+    }
+
+    if !found_header {
+        return Err(RestoreError::BackupCorrupted {
+            message: "Empty or invalid backup file".to_string(),
+        });
+    }
+
+    Ok(ParsedBackup {
+        entries,
+        skipped_lines,
+    })
+}
+
+/// Restore a branch from a backup
+///
+/// # Arguments
+/// * `branch_name` - The name of the branch to restore
+/// * `backup_file` - Optional path to a specific backup file. If None, uses most recent backup.
+/// * `target_name` - Optional alternate name for the restored branch (--as flag)
+/// * `force` - Whether to overwrite an existing branch
+///
+/// # Returns
+/// * `Ok(RestoreResult)` on success
+/// * `Err(RestoreError)` on failure with detailed error information
+pub fn restore_branch(
+    branch_name: &str,
+    backup_file: Option<&str>,
+    target_name: Option<&str>,
+    force: bool,
+) -> Result<RestoreResult, RestoreError> {
+    let repo_name = Config::get_repo_name();
+
+    // Determine the final branch name
+    let final_branch_name = target_name.unwrap_or(branch_name);
+
+    // Check if branch already exists
+    let branch_exists = check_branch_exists(final_branch_name);
+
+    if branch_exists && !force {
+        return Err(RestoreError::BranchExists {
+            branch_name: final_branch_name.to_string(),
+        });
+    }
+
+    // Determine which backup file to use
+    let backup_path = if let Some(filename) = backup_file {
+        // If it's just a filename, look in the repo's backup directory
+        let path = PathBuf::from(filename);
+        if path.is_absolute() || path.exists() {
+            path
+        } else {
+            // Look in the repo's backup directory
+            let backup_dir = Config::repo_backup_dir(&repo_name).map_err(RestoreError::Other)?;
+            backup_dir.join(filename)
+        }
+    } else {
+        // Use most recent backup
+        let backups = list_repo_backups(&repo_name).map_err(RestoreError::Other)?;
+
+        backups
+            .into_iter()
+            .next()
+            .map(|info| info.path)
+            .ok_or_else(|| RestoreError::NoBackupsFound {
+                repo_name: repo_name.clone(),
+            })?
+    };
+
+    // Parse the backup file
+    let parsed = parse_backup_file(&backup_path)?;
+
+    // Find the branch in the backup
+    let entry = parsed
+        .entries
+        .iter()
+        .find(|e| e.name == branch_name)
+        .ok_or_else(|| RestoreError::BranchNotInBackup {
+            branch_name: branch_name.to_string(),
+            available_branches: parsed.entries.clone(),
+            skipped_lines: parsed.skipped_lines.clone(),
+        })?;
+
+    // Check if the commit exists
+    if !commit_exists(&entry.commit_sha) {
+        return Err(RestoreError::CommitNotFound {
+            branch_name: branch_name.to_string(),
+            commit_sha: entry.commit_sha.clone(),
+        });
+    }
+
+    // Create or update the branch
+    create_branch(final_branch_name, &entry.commit_sha, force).map_err(RestoreError::Other)?;
+
+    Ok(RestoreResult {
+        original_name: branch_name.to_string(),
+        restored_name: final_branch_name.to_string(),
+        commit_sha: entry.commit_sha.clone(),
+        overwrote_existing: branch_exists && force,
+    })
+}
+
+/// Check if a local branch exists
+fn check_branch_exists(branch_name: &str) -> bool {
+    Command::new("git")
+        .args([
+            "rev-parse",
+            "--verify",
+            &format!("refs/heads/{}", branch_name),
+        ])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+/// Check if a commit exists in the repository
+fn commit_exists(sha: &str) -> bool {
+    Command::new("git")
+        .args(["cat-file", "-t", sha])
+        .output()
+        .map(|output| {
+            output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "commit"
+        })
+        .unwrap_or(false)
+}
+
+/// Create a branch at a specific commit
+fn create_branch(branch_name: &str, commit_sha: &str, force: bool) -> Result<()> {
+    let mut args = vec!["branch"];
+    if force {
+        args.push("-f");
+    }
+    args.push(branch_name);
+    args.push(commit_sha);
+
+    let output = Command::new("git")
+        .args(&args)
+        .output()
+        .context("Failed to run git branch command")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!(
+            "Failed to create branch '{}': {}",
+            branch_name,
+            stderr.trim()
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

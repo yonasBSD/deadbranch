@@ -111,4 +111,22 @@ pub enum BackupAction {
         #[arg(long)]
         repo: Option<String>,
     },
+
+    /// Restore a branch from backup
+    Restore {
+        /// Name of the branch to restore
+        branch: String,
+
+        /// Restore from a specific backup file (defaults to most recent)
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Restore with a different branch name
+        #[arg(long, value_name = "NAME")]
+        r#as: Option<String>,
+
+        /// Overwrite existing branch if it exists
+        #[arg(long)]
+        force: bool,
+    },
 }
