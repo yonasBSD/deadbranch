@@ -315,6 +315,98 @@ impl std::fmt::Display for RestoreError {
 
 impl std::error::Error for RestoreError {}
 
+/// Result of a cleanup operation
+#[derive(Debug)]
+pub struct CleanResult {
+    /// Number of backup files deleted
+    pub deleted_count: usize,
+    /// Total bytes freed
+    pub bytes_freed: u64,
+}
+
+/// Information about a backup that will be deleted
+#[derive(Debug, Clone)]
+pub struct BackupToDelete {
+    /// The backup info
+    pub info: BackupInfo,
+    /// File size in bytes
+    pub size_bytes: u64,
+}
+
+impl BackupToDelete {
+    /// Format the size as human-readable string
+    pub fn format_size(&self) -> String {
+        format_bytes(self.size_bytes)
+    }
+}
+
+/// Format bytes as human-readable string (e.g., "1.2 KB")
+pub fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+
+    if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+/// Identify backups to delete for a repository
+///
+/// Returns backups that should be deleted (older ones beyond the keep count),
+/// sorted by timestamp (oldest first, i.e., first to delete).
+pub fn get_backups_to_clean(repo_name: &str, keep: usize) -> Result<Vec<BackupToDelete>> {
+    let backups = list_repo_backups(repo_name)?;
+
+    if backups.len() <= keep {
+        return Ok(Vec::new());
+    }
+
+    // Backups are already sorted newest-first, so skip the first `keep` entries
+    let to_delete: Vec<BackupToDelete> = backups
+        .into_iter()
+        .skip(keep)
+        .map(|info| {
+            let size_bytes = fs::metadata(&info.path).map(|m| m.len()).unwrap_or(0);
+            BackupToDelete { info, size_bytes }
+        })
+        .collect();
+
+    Ok(to_delete)
+}
+
+/// Delete backup files
+///
+/// # Arguments
+/// * `backups` - List of backups to delete
+///
+/// # Returns
+/// * `Ok(CleanResult)` with deletion statistics
+/// * `Err` if deletion fails
+pub fn delete_backups(backups: &[BackupToDelete]) -> Result<CleanResult> {
+    let mut deleted_count = 0;
+    let mut bytes_freed = 0;
+
+    for backup in backups {
+        fs::remove_file(&backup.info.path).with_context(|| {
+            format!(
+                "Failed to delete backup file: {}",
+                backup.info.path.display()
+            )
+        })?;
+        deleted_count += 1;
+        bytes_freed += backup.size_bytes;
+    }
+
+    Ok(CleanResult {
+        deleted_count,
+        bytes_freed,
+    })
+}
+
 /// Parse a backup file and extract branch entries
 ///
 /// The backup format has lines like:

@@ -567,6 +567,63 @@ fn cmd_backup(action: BackupAction) -> Result<()> {
                 }
             }
         }
+
+        BackupAction::Clean {
+            current,
+            repo,
+            keep,
+            dry_run,
+            yes,
+        } => {
+            // Determine target repo
+            let repo_name = if current {
+                if !git::is_git_repository() {
+                    ui::error("Not a git repository (or any parent up to mount point)");
+                    ui::info("Use --repo <name> to specify a repository by name.");
+                    std::process::exit(1);
+                }
+                Config::get_repo_name()
+            } else if let Some(name) = repo {
+                name
+            } else {
+                ui::error("Either --current or --repo <name> is required");
+                std::process::exit(1);
+            };
+
+            // Get backups to clean
+            let backups_to_clean = backup::get_backups_to_clean(&repo_name, keep)?;
+
+            // Check if there are any backups at all for this repo
+            let all_backups = backup::list_repo_backups(&repo_name)?;
+            if all_backups.is_empty() {
+                ui::display_no_backups_for_repo(&repo_name);
+                return Ok(());
+            }
+
+            // Display what will be deleted
+            ui::display_backups_to_clean(&repo_name, &backups_to_clean, keep, dry_run);
+
+            if backups_to_clean.is_empty() {
+                return Ok(());
+            }
+
+            if dry_run {
+                let total_size: u64 = backups_to_clean.iter().map(|b| b.size_bytes).sum();
+                ui::display_backup_clean_dry_run(backups_to_clean.len(), total_size);
+                return Ok(());
+            }
+
+            // Confirm deletion unless --yes was provided
+            let total_size: u64 = backups_to_clean.iter().map(|b| b.size_bytes).sum();
+            if !yes && !ui::confirm_backup_clean(backups_to_clean.len(), total_size) {
+                ui::info("Cancelled");
+                return Ok(());
+            }
+
+            // Perform deletion
+            let result = backup::delete_backups(&backups_to_clean)?;
+            ui::display_backup_clean_success(&result);
+        }
     }
 
     Ok(())

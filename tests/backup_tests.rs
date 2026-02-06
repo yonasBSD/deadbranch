@@ -845,3 +845,314 @@ fn test_backup_restore_shows_short_sha() {
     let output = String::from_utf8_lossy(&assert.get_output().stdout);
     assert!(output.contains("at commit"));
 }
+
+// ============================================================================
+// Tests for `deadbranch backup clean`
+// ============================================================================
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_requires_current_or_repo() {
+    let repo = create_test_repo();
+
+    // Running backup clean without --current or --repo should fail
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean"])
+        .current_dir(&repo)
+        .assert()
+        .failure();
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_current_requires_git_repo() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Running --current outside a git repo should fail
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean", "--current"])
+        .current_dir(&temp_dir)
+        .assert()
+        .failure()
+        .code(1);
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_no_backups() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name);
+
+    // Cleaning when no backups exist should show appropriate message
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean", "--current"])
+        .current_dir(&repo)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No backups found"));
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_nothing_to_clean() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create just one backup (less than default keep=10)
+    create_branch(repo.path(), "single-backup-branch");
+    make_branch_old(repo.path(), "single-backup-branch", 45);
+    merge_branch(repo.path(), "single-backup-branch");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Cleaning should show nothing to clean
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean", "--current"])
+        .current_dir(&repo)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No old backups to clean"));
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_dry_run() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create 3 backups
+    for i in 1..=3 {
+        let branch_name = format!("dry-run-branch-{}", i);
+        create_branch(repo.path(), &branch_name);
+        make_branch_old(repo.path(), &branch_name, 45);
+        merge_branch(repo.path(), &branch_name);
+
+        Command::cargo_bin("deadbranch")
+            .unwrap()
+            .args(["clean", "-y"])
+            .current_dir(&repo)
+            .assert()
+            .success();
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+    }
+
+    // Verify we have 3 backups
+    let backup_dir = get_backup_dir(&repo_name);
+    let backup_count_before = fs::read_dir(&backup_dir).unwrap().count();
+    assert_eq!(backup_count_before, 3);
+
+    // Dry run with keep=1 should show what would be deleted but not delete
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean", "--current", "--keep", "1", "--dry-run"])
+        .current_dir(&repo)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("DRY RUN"))
+        .stdout(predicate::str::contains("No backups will be deleted"));
+
+    // Verify no files were actually deleted
+    let backup_count_after = fs::read_dir(&backup_dir).unwrap().count();
+    assert_eq!(backup_count_after, 3);
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_with_yes_flag() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create 3 backups
+    for i in 1..=3 {
+        let branch_name = format!("yes-flag-branch-{}", i);
+        create_branch(repo.path(), &branch_name);
+        make_branch_old(repo.path(), &branch_name, 45);
+        merge_branch(repo.path(), &branch_name);
+
+        Command::cargo_bin("deadbranch")
+            .unwrap()
+            .args(["clean", "-y"])
+            .current_dir(&repo)
+            .assert()
+            .success();
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+    }
+
+    // Verify we have 3 backups
+    let backup_dir = get_backup_dir(&repo_name);
+    let backup_count_before = fs::read_dir(&backup_dir).unwrap().count();
+    assert_eq!(backup_count_before, 3);
+
+    // Clean with --yes and --keep=1 should delete 2 backups
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean", "--current", "--keep", "1", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Deleted"))
+        .stdout(predicate::str::contains("2")); // 2 files deleted
+
+    // Verify only 1 backup remains
+    let backup_count_after = fs::read_dir(&backup_dir).unwrap().count();
+    assert_eq!(backup_count_after, 1);
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_keeps_most_recent() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create 3 backups with distinct timestamps
+    for i in 1..=3 {
+        let branch_name = format!("keep-recent-branch-{}", i);
+        create_branch(repo.path(), &branch_name);
+        make_branch_old(repo.path(), &branch_name, 45);
+        merge_branch(repo.path(), &branch_name);
+
+        Command::cargo_bin("deadbranch")
+            .unwrap()
+            .args(["clean", "-y"])
+            .current_dir(&repo)
+            .assert()
+            .success();
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+    }
+
+    // Get backup filenames sorted (oldest first)
+    let backup_dir = get_backup_dir(&repo_name);
+    let mut backups: Vec<_> = fs::read_dir(&backup_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    backups.sort();
+    let newest_backup = backups.last().unwrap().clone();
+
+    // Clean with keep=1
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean", "--current", "--keep", "1", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Verify only the newest backup remains
+    let remaining: Vec<_> = fs::read_dir(&backup_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0], newest_backup);
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_with_repo_flag() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create 2 backups
+    for i in 1..=2 {
+        let branch_name = format!("repo-flag-clean-{}", i);
+        create_branch(repo.path(), &branch_name);
+        make_branch_old(repo.path(), &branch_name, 45);
+        merge_branch(repo.path(), &branch_name);
+
+        Command::cargo_bin("deadbranch")
+            .unwrap()
+            .args(["clean", "-y"])
+            .current_dir(&repo)
+            .assert()
+            .success();
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+    }
+
+    // Can clean by repo name from anywhere
+    let other_dir = TempDir::new().unwrap();
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean", "--repo", &repo_name, "--keep", "1", "-y"])
+        .current_dir(&other_dir)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Deleted"));
+
+    // Verify only 1 backup remains
+    let backup_dir = get_backup_dir(&repo_name);
+    let backup_count = fs::read_dir(&backup_dir).unwrap().count();
+    assert_eq!(backup_count, 1);
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_shows_table() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create 2 backups
+    for i in 1..=2 {
+        let branch_name = format!("table-display-{}", i);
+        create_branch(repo.path(), &branch_name);
+        make_branch_old(repo.path(), &branch_name, 45);
+        merge_branch(repo.path(), &branch_name);
+
+        Command::cargo_bin("deadbranch")
+            .unwrap()
+            .args(["clean", "-y"])
+            .current_dir(&repo)
+            .assert()
+            .success();
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+    }
+
+    // Dry run should show table with columns
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean", "--current", "--keep", "1", "--dry-run"])
+        .current_dir(&repo)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Backup"))
+        .stdout(predicate::str::contains("Age"))
+        .stdout(predicate::str::contains("Branches"))
+        .stdout(predicate::str::contains("Size"))
+        .stdout(predicate::str::contains("backup-"));
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_clean_mutual_exclusion() {
+    let repo = create_test_repo();
+
+    // --current and --repo should be mutually exclusive
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "clean", "--current", "--repo", "some-repo"])
+        .current_dir(&repo)
+        .assert()
+        .failure();
+}

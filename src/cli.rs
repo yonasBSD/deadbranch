@@ -129,4 +129,27 @@ pub enum BackupAction {
         #[arg(long)]
         force: bool,
     },
+
+    /// Remove old backups, keeping the most recent ones
+    Clean {
+        /// Clean backups for current repository
+        #[arg(long, conflicts_with = "repo", required_unless_present = "repo")]
+        current: bool,
+
+        /// Clean backups for a specific repository by name
+        #[arg(long, required_unless_present = "current")]
+        repo: Option<String>,
+
+        /// Number of most recent backups to keep (default: 10)
+        #[arg(long, default_value = "10")]
+        keep: usize,
+
+        /// Show what would be deleted without doing it
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Skip confirmation prompt
+        #[arg(short, long)]
+        yes: bool,
+    },
 }

@@ -7,8 +7,11 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 use std::time::Duration;
 
+use crate::backup::format_bytes;
 use crate::backup::BackupInfo;
-use crate::backup::{BackupBranchEntry, RestoreError, RestoreResult, SkippedLine};
+use crate::backup::{
+    BackupBranchEntry, BackupToDelete, CleanResult, RestoreError, RestoreResult, SkippedLine,
+};
 use crate::branch::Branch;
 
 /// Generic pluralization helper
@@ -613,4 +616,98 @@ fn display_skipped_lines(skipped: &[SkippedLine]) {
         println!("  {} ... and {} more", style("→").dim(), count - 3);
     }
     println!();
+}
+
+/// Display backups that will be deleted in a table format
+pub fn display_backups_to_clean(
+    repo_name: &str,
+    backups: &[BackupToDelete],
+    keep: usize,
+    _dry_run: bool,
+) {
+    println!(
+        "Cleaning backups for '{}' (keeping {} most recent)...\n",
+        style(repo_name).cyan(),
+        keep
+    );
+
+    if backups.is_empty() {
+        println!("  {} No old backups to clean\n", style("ℹ").blue());
+        return;
+    }
+
+    println!("{}", style("Backups to Delete:").bold());
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+
+    table.set_header(vec![
+        Cell::new("Backup").add_attribute(Attribute::Bold),
+        Cell::new("Age").add_attribute(Attribute::Bold),
+        Cell::new("Branches").add_attribute(Attribute::Bold),
+        Cell::new("Size").add_attribute(Attribute::Bold),
+    ]);
+
+    for backup in backups {
+        table.add_row(vec![
+            Cell::new(backup.info.filename()),
+            Cell::new(backup.info.format_age()).fg(Color::DarkGrey),
+            Cell::new(backup.info.branch_count.to_string()),
+            Cell::new(backup.format_size()).fg(Color::DarkGrey),
+        ]);
+    }
+
+    println!("{table}\n");
+}
+
+/// Ask for confirmation to delete backups
+pub fn confirm_backup_clean(count: usize, total_size: u64) -> bool {
+    let file_word = pluralize(count, "backup", "backups");
+    let prompt = format!(
+        "Delete {} {} ({})?",
+        count,
+        file_word,
+        format_bytes(total_size)
+    );
+    confirm(&prompt, false)
+}
+
+/// Display cleanup success message
+pub fn display_backup_clean_success(result: &CleanResult) {
+    let file_word = pluralize(result.deleted_count, "backup", "backups");
+    println!(
+        "{} Deleted {} {} (freed {})",
+        style("✓").green().bold(),
+        style(result.deleted_count).cyan(),
+        file_word,
+        style(format_bytes(result.bytes_freed)).cyan()
+    );
+}
+
+/// Display cleanup dry-run header and footer (styled like branch clean)
+pub fn display_backup_clean_dry_run(count: usize, total_size: u64) {
+    let file_word = pluralize(count, "backup", "backups");
+    println!(
+        "{}",
+        style(format!("[DRY RUN] No backups will be deleted."))
+            .yellow()
+            .bold()
+    );
+    println!();
+    println!(
+        "{} Would delete {} {} ({})",
+        style("ℹ").blue(),
+        style(count).cyan(),
+        file_word,
+        style(format_bytes(total_size)).cyan()
+    );
+}
+
+/// Display message when no backups found for cleanup
+pub fn display_no_backups_for_repo(repo_name: &str) {
+    println!(
+        "{} No backups found for repository '{}'",
+        style("ℹ").blue(),
+        repo_name
+    );
 }
