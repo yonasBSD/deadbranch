@@ -6,7 +6,7 @@
 
 ## Demo
 
-![deadbranch demo](demo.gif)
+![deadbranch demo](./demo/demo.gif)
 
 ## Features
 
