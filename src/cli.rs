@@ -130,6 +130,9 @@ pub enum BackupAction {
         force: bool,
     },
 
+    /// Show backup storage statistics
+    Stats,
+
     /// Remove old backups, keeping the most recent ones
     Clean {
         /// Clean backups for current repository

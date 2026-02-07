@@ -10,7 +10,8 @@ use std::time::Duration;
 use crate::backup::format_bytes;
 use crate::backup::BackupInfo;
 use crate::backup::{
-    BackupBranchEntry, BackupToDelete, CleanResult, RestoreError, RestoreResult, SkippedLine,
+    BackupBranchEntry, BackupStats, BackupToDelete, CleanResult, RestoreError, RestoreResult,
+    SkippedLine,
 };
 use crate::branch::Branch;
 
@@ -710,4 +711,51 @@ pub fn display_no_backups_for_repo(repo_name: &str) {
         style("ℹ").blue(),
         repo_name
     );
+}
+
+/// Display backup storage statistics in a table
+pub fn display_backup_stats(stats: &BackupStats) {
+    if stats.repos.is_empty() {
+        info("No backups found.");
+        println!();
+        println!(
+            "  {} Backups are created automatically when running 'deadbranch clean'.",
+            style("↪").dim()
+        );
+        return;
+    }
+
+    let mut table = Table::new();
+    table.load_preset(UTF8_FULL);
+
+    table.set_header(vec![
+        Cell::new("Repository").add_attribute(Attribute::Bold),
+        Cell::new("Backups").add_attribute(Attribute::Bold),
+        Cell::new("Size").add_attribute(Attribute::Bold),
+    ]);
+
+    for repo in &stats.repos {
+        table.add_row(vec![
+            Cell::new(&repo.repo_name).fg(Color::Yellow),
+            Cell::new(repo.backup_count.to_string()).fg(Color::Cyan),
+            Cell::new(format_bytes(repo.total_bytes)).fg(Color::DarkGrey),
+        ]);
+    }
+
+    println!("\n{}", style("Backup storage statistics:").bold());
+    println!(
+        "{} {}",
+        style("Location:").dim(),
+        style(stats.backups_dir.display()).dim()
+    );
+    println!("{table}");
+
+    println!(
+        "{} {} {}, {}",
+        style("Total:").dim(),
+        style(stats.total_backups()).cyan(),
+        pluralize(stats.total_backups(), "backup", "backups"),
+        style(format_bytes(stats.total_bytes())).cyan()
+    );
+    println!();
 }

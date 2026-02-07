@@ -354,6 +354,67 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
+/// Storage statistics for a single repository
+#[derive(Debug)]
+pub struct RepoStats {
+    /// Repository name
+    pub repo_name: String,
+    /// Number of backup files
+    pub backup_count: usize,
+    /// Total size in bytes
+    pub total_bytes: u64,
+}
+
+/// Aggregated backup storage statistics
+#[derive(Debug)]
+pub struct BackupStats {
+    /// Per-repository statistics
+    pub repos: Vec<RepoStats>,
+    /// Path to the backups directory
+    pub backups_dir: PathBuf,
+}
+
+impl BackupStats {
+    /// Total number of backups across all repositories
+    pub fn total_backups(&self) -> usize {
+        self.repos.iter().map(|r| r.backup_count).sum()
+    }
+
+    /// Total size across all repositories
+    pub fn total_bytes(&self) -> u64 {
+        self.repos.iter().map(|r| r.total_bytes).sum()
+    }
+}
+
+/// Gather backup storage statistics across all repositories
+pub fn get_backup_stats() -> Result<BackupStats> {
+    let backups_dir = Config::backups_dir()?;
+    let all_backups = list_all_backups()?;
+
+    let mut repos: Vec<RepoStats> = all_backups
+        .into_iter()
+        .map(|(repo_name, backups)| {
+            let total_bytes: u64 = backups
+                .iter()
+                .map(|b| fs::metadata(&b.path).map(|m| m.len()).unwrap_or(0))
+                .sum();
+
+            RepoStats {
+                repo_name,
+                backup_count: backups.len(),
+                total_bytes,
+            }
+        })
+        .collect();
+
+    repos.sort_by(|a, b| a.repo_name.cmp(&b.repo_name));
+
+    Ok(BackupStats {
+        repos,
+        backups_dir,
+    })
+}
+
 /// Identify backups to delete for a repository
 ///
 /// Returns backups that should be deleted (older ones beyond the keep count),

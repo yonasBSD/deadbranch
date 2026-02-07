@@ -545,6 +545,11 @@ fn cmd_backup(action: BackupAction) -> Result<()> {
             }
         }
 
+        BackupAction::Stats => {
+            let stats = backup::get_backup_stats()?;
+            ui::display_backup_stats(&stats);
+        }
+
         BackupAction::Restore {
             branch,
             from,
