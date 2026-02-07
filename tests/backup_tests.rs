@@ -144,7 +144,9 @@ fn get_repo_name(repo_path: &std::path::Path) -> String {
 
 /// Get the backup directory for a repo
 fn get_backup_dir(repo_name: &str) -> PathBuf {
-    let home = std::env::var("HOME").expect("HOME not set");
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .expect("HOME or USERPROFILE not set");
     PathBuf::from(home)
         .join(".deadbranch")
         .join("backups")
