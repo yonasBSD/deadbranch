@@ -71,6 +71,7 @@ pub fn display_branches(branches: &[Branch], title: &str) {
     table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
+        Cell::new("#").add_attribute(Attribute::Bold),
         Cell::new("Branch").add_attribute(Attribute::Bold),
         Cell::new("Age").add_attribute(Attribute::Bold),
         Cell::new("Status").add_attribute(Attribute::Bold),
@@ -78,7 +79,7 @@ pub fn display_branches(branches: &[Branch], title: &str) {
         Cell::new("Last Commit").add_attribute(Attribute::Bold),
     ]);
 
-    for branch in branches {
+    for (i, branch) in branches.iter().enumerate() {
         let status = if branch.is_merged {
             Cell::new("merged").fg(Color::Green)
         } else {
@@ -92,6 +93,7 @@ pub fn display_branches(branches: &[Branch], title: &str) {
         };
 
         table.add_row(vec![
+            Cell::new((i + 1).to_string()).fg(Color::DarkGrey),
             Cell::new(&branch.name),
             Cell::new(branch.format_age()),
             status,
