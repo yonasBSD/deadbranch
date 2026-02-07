@@ -690,7 +690,7 @@ pub fn display_backup_clean_dry_run(count: usize, total_size: u64) {
     let file_word = pluralize(count, "backup", "backups");
     println!(
         "{}",
-        style(format!("[DRY RUN] No backups will be deleted."))
+        style("[DRY RUN] No backups will be deleted.")
             .yellow()
             .bold()
     );

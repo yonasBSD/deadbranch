@@ -15,8 +15,9 @@ use crate::config::Config;
 pub struct BackupInfo {
     /// Path to the backup file
     pub path: PathBuf,
-    /// Repository name
-    pub repo_name: String,
+    /// Repository name (used for grouping and display)
+    #[allow(dead_code)]
+    repo_name: String,
     /// Timestamp when backup was created
     pub timestamp: DateTime<Utc>,
     /// Number of branches in the backup
@@ -103,7 +104,7 @@ impl BackupInfo {
 }
 
 /// Parse timestamp from backup filename (backup-YYYYMMDD-HHMMSS.txt)
-fn parse_timestamp_from_filename(path: &PathBuf) -> Option<DateTime<Utc>> {
+fn parse_timestamp_from_filename(path: &Path) -> Option<DateTime<Utc>> {
     let filename = path.file_stem()?.to_str()?;
     let timestamp_part = filename.strip_prefix("backup-")?;
 
@@ -409,10 +410,7 @@ pub fn get_backup_stats() -> Result<BackupStats> {
 
     repos.sort_by(|a, b| a.repo_name.cmp(&b.repo_name));
 
-    Ok(BackupStats {
-        repos,
-        backups_dir,
-    })
+    Ok(BackupStats { repos, backups_dir })
 }
 
 /// Identify backups to delete for a repository
