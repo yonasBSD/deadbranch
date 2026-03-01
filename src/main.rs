@@ -55,7 +55,12 @@ fn main() -> Result<()> {
         Commands::Backup { action } => cmd_backup(action),
 
         Commands::Completions { shell } => {
-            generate(shell, &mut Cli::command(), "deadbranch", &mut std::io::stdout());
+            generate(
+                shell,
+                &mut Cli::command(),
+                "deadbranch",
+                &mut std::io::stdout(),
+            );
             Ok(())
         }
     }

@@ -80,11 +80,11 @@ function download(url) {
  */
 function extractTarGz(buffer, destDir) {
   const tarPath = path.join(os.tmpdir(), 'deadbranch.tar');
-  
+
   // Decompress gzip
   const decompressed = zlib.gunzipSync(buffer);
   fs.writeFileSync(tarPath, decompressed);
-  
+
   // Extract tar
   execSync(`tar -xf "${tarPath}" -C "${destDir}"`, { stdio: 'inherit' });
   fs.unlinkSync(tarPath);
@@ -96,7 +96,7 @@ function extractTarGz(buffer, destDir) {
 function extractZip(buffer, destDir) {
   const zipPath = path.join(os.tmpdir(), 'deadbranch.zip');
   fs.writeFileSync(zipPath, buffer);
-  
+
   // Use PowerShell to extract
   execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${destDir}' -Force"`, { stdio: 'inherit' });
   fs.unlinkSync(zipPath);
@@ -135,7 +135,7 @@ async function install() {
     const destBinary = path.join(binDir, BINARY_NAME + binaryExt);
 
     fs.copyFileSync(srcBinary, destBinary);
-    
+
     // Make executable on Unix
     if (os.platform() !== 'win32') {
       fs.chmodSync(destBinary, 0o755);
