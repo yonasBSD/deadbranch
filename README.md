@@ -139,6 +139,7 @@ deadbranch clean [OPTIONS]
 | `--dry-run` | Show what would be deleted without doing it |
 | `--local` | Only delete local branches |
 | `--remote` | Only delete remote branches |
+| `-y, --yes` | Skip confirmation prompts (useful for scripts) |
 
 **Safety features:**
 - Only deletes **merged** branches by default
@@ -153,12 +154,12 @@ deadbranch clean [OPTIONS]
 $ deadbranch clean
 
 Local Branches to Delete:
-┌──────────────────────┬─────────┬────────┬──────────────┐
-│ Branch               │ Age     │ Status │ Last Commit  │
-├──────────────────────┼─────────┼────────┼──────────────┤
-│ feature/old-api      │ 154d    │ merged │ 2024-09-01   │
-│ bugfix/header-issue  │ 89d     │ merged │ 2024-11-03   │
-└──────────────────────┴─────────┴────────┴──────────────┘
+┌────┬──────────────────────┬─────────┬────────┬──────────────┐
+│ #  │ Branch               │ Age     │ Status │ Last Commit  │
+├────┼──────────────────────┼─────────┼────────┼──────────────┤
+│ 1  │ feature/old-api      │ 154d    │ merged │ 2024-09-01   │
+│ 2  │ bugfix/header-issue  │ 89d     │ merged │ 2024-11-03   │
+└────┴──────────────────────┴─────────┴────────┴──────────────┘
 
 Delete 2 local branches? [y/N] y
 
@@ -178,11 +179,11 @@ Preview deletions without making any changes:
 $ deadbranch clean --dry-run
 
 Local Branches to Delete:
-┌──────────────────────┬─────────┬────────┬──────────────┐
-│ Branch               │ Age     │ Status │ Last Commit  │
-├──────────────────────┼─────────┼────────┼──────────────┤
-│ feature/old-api      │ 154d    │ merged │ 2024-09-01   │
-└──────────────────────┴─────────┴────────┴──────────────┘
+┌────┬──────────────────────┬─────────┬────────┬──────────────┐
+│ #  │ Branch               │ Age     │ Status │ Last Commit  │
+├────┼──────────────────────┼─────────┼────────┼──────────────┤
+│ 1  │ feature/old-api      │ 154d    │ merged │ 2024-09-01   │
+└────┴──────────────────────┴─────────┴────────┴──────────────┘
 
 [DRY RUN] Commands that would be executed:
   git branch -d feature/old-api
@@ -200,6 +201,9 @@ deadbranch config show
 
 # Set default age threshold
 deadbranch config set days 45
+
+# Set default branch for merge detection
+deadbranch config set default-branch main
 
 # Set protected branches
 deadbranch config set protected-branches main master develop
@@ -223,6 +227,74 @@ default_days = 30
 [branches]
 protected = ["main", "master", "develop", "staging", "production"]
 exclude_patterns = ["wip/*", "draft/*", "*/wip", "*/draft"]
+```
+
+#### Config keys
+
+| Key | Aliases | Description |
+|-----|---------|-------------|
+| `days` | `default-days`, `general.default-days` | Default age threshold in days |
+| `default-branch` | `branches.default-branch` | Branch used for merge detection (auto-detected if unset) |
+| `protected-branches` | `branches.protected` | Branches that are never deleted |
+| `exclude-patterns` | `branches.exclude-patterns` | Glob patterns for branches to skip |
+
+### Backup Management
+
+Every `deadbranch clean` run automatically creates a backup. Use `deadbranch backup` to manage those backups.
+
+#### List backups
+
+```bash
+# Show a summary of all repositories with backups
+deadbranch backup list
+
+# Show backups for the current repository
+deadbranch backup list --current
+
+# Show backups for a specific repository
+deadbranch backup list --repo my-repo
+```
+
+#### Restore a deleted branch
+
+```bash
+# Restore from the most recent backup
+deadbranch backup restore feature/old-api
+
+# Restore from a specific backup file
+deadbranch backup restore feature/old-api --from backup-20250201-143022.txt
+
+# Restore with a different name
+deadbranch backup restore feature/old-api --as feature/recovered
+
+# Overwrite an existing branch
+deadbranch backup restore feature/old-api --force
+```
+
+#### Backup statistics
+
+```bash
+# Show storage usage per repository and overall
+deadbranch backup stats
+```
+
+#### Clean up old backups
+
+```bash
+# Keep the 10 most recent backups for the current repo (default)
+deadbranch backup clean --current
+
+# Keep only the 3 most recent backups
+deadbranch backup clean --current --keep 3
+
+# Preview what would be removed
+deadbranch backup clean --current --dry-run
+
+# Skip confirmation prompt
+deadbranch backup clean --current --yes
+
+# Clean backups for a specific repository by name
+deadbranch backup clean --repo my-repo
 ```
 
 ## Safety Features
@@ -252,7 +324,7 @@ git branch feature/old-api abc1234def5678
 git branch bugfix/header-issue 987654fedcba
 ```
 
-Simply run the appropriate command to restore a branch.
+You can restore branches manually by running those commands, or use the `deadbranch backup restore` command.
 
 ## Pattern Matching
 
@@ -288,7 +360,6 @@ cargo clippy
 
 ## Roadmap
 
-- [ ] `deadbranch restore` command
 - [ ] `deadbranch stats` command
 - [ ] Interactive TUI mode
 - [ ] `--only-mine` flag for personal branches
