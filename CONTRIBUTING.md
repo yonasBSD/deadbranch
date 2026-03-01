@@ -21,6 +21,19 @@ cd deadbranch
 cargo build
 ```
 
+Install [pre-commit](https://pre-commit.com/) and set up the git hooks:
+
+```bash
+brew install pre-commit   # or: pip install pre-commit
+pre-commit install
+```
+
+Hooks run automatically on `git commit`. To run them manually:
+
+```bash
+pre-commit run --all-files
+```
+
 Useful commands:
 
 ```bash
