@@ -10,7 +10,8 @@ mod ui;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::generate;
 use std::fs;
 use std::io::Write;
 
@@ -21,10 +22,10 @@ use config::Config;
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Check if we're in a git repository (except for config and backup commands)
+    // Check if we're in a git repository (except for config, backup, and completions commands)
     if !matches!(
         cli.command,
-        Commands::Config { .. } | Commands::Backup { .. }
+        Commands::Config { .. } | Commands::Backup { .. } | Commands::Completions { .. }
     ) && !git::is_git_repository()
     {
         ui::error("Not a git repository (or any parent up to mount point)");
@@ -52,6 +53,11 @@ fn main() -> Result<()> {
         Commands::Config { action } => cmd_config(action),
 
         Commands::Backup { action } => cmd_backup(action),
+
+        Commands::Completions { shell } => {
+            generate(shell, &mut Cli::command(), "deadbranch", &mut std::io::stdout());
+            Ok(())
+        }
     }
 }
 

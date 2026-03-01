@@ -70,6 +70,48 @@ cargo build --release
 # Binary will be at target/release/deadbranch
 ```
 
+## Shell Completions
+
+`deadbranch` can generate tab-completion scripts for bash, zsh, and fish.
+
+### Bash
+
+```bash
+mkdir -p ~/.local/share/bash-completion/completions
+deadbranch completions bash > ~/.local/share/bash-completion/completions/deadbranch
+```
+
+Requires bash-completion 2.x to be active. On macOS without Homebrew's bash, source the file manually in `~/.bash_profile`:
+
+```bash
+source ~/.local/share/bash-completion/completions/deadbranch
+```
+
+### Zsh
+
+```bash
+mkdir -p ~/.zfunc
+deadbranch completions zsh > ~/.zfunc/_deadbranch
+```
+
+Then add the following to your `~/.zshrc` **before** the `compinit` call (or add it if you don't have one):
+
+```zsh
+fpath=(~/.zfunc $fpath)
+autoload -Uz compinit && compinit
+```
+
+Reload your shell or run `exec zsh` to activate.
+
+### Fish
+
+```bash
+mkdir -p ~/.config/fish/completions
+deadbranch completions fish > ~/.config/fish/completions/deadbranch.fish
+```
+
+Fish auto-loads completions from this directory — no extra configuration needed.
+
 ## Quick Start
 
 ```bash
@@ -360,7 +402,6 @@ cargo clippy
 
 ## Roadmap
 
-- [ ] `deadbranch stats` command
 - [ ] Interactive TUI mode
 - [ ] `--only-mine` flag for personal branches
 - [ ] GitHub/GitLab PR detection

@@ -1,6 +1,7 @@
 //! CLI argument definitions using clap
 
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 
 #[derive(Parser)]
 #[command(name = "deadbranch")]
@@ -73,6 +74,12 @@ pub enum Commands {
     Backup {
         #[command(subcommand)]
         action: BackupAction,
+    },
+
+    /// Generate shell completion scripts
+    Completions {
+        /// Shell to generate completions for
+        shell: Shell,
     },
 }
 
