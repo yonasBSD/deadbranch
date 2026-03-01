@@ -24,3 +24,10 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
+
+      - id: generate-man-page
+        name: Generate man page
+        entry: bash -c 'cargo build && git add man/deadbranch.1'
+        language: system
+        types: [rust]
+        pass_filenames: false

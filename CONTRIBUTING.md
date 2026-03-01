@@ -53,8 +53,9 @@ cargo fmt              # Format code
 5. Ensure all tests pass: `cargo test`
 6. Ensure there are no lint warnings: `cargo clippy`
 7. Format your code: `cargo fmt`
-8. Commit following the [commit message conventions](#commit-messages)
-9. Open a pull request
+8. If you changed CLI flags or descriptions in `cli.rs`, the pre-commit hook automatically regenerates and stages `man/deadbranch.1`
+9. Commit following the [commit message conventions](#commit-messages)
+10. Open a pull request
 
 ## Commit Messages
 

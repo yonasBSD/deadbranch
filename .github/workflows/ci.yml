@@ -61,6 +61,18 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: Build (for generated file check)
+        run: cargo build
+
+      - name: Check man page is up to date
+        run: |
+          git add --intent-to-add man/deadbranch.1
+          if ! git diff --exit-code man/deadbranch.1; then
+            echo "Error: man/deadbranch.1 is out of date."
+            echo "Run 'cargo build' locally and commit the updated man/deadbranch.1."
+            exit 1
+          fi
+
   build-release:
     name: Build Release (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

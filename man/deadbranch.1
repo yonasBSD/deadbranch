@@ -1,0 +1,39 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH deadbranch 1  "deadbranch 0.1.2"
+.SH NAME
+deadbranch \- Clean up stale git branches safely
+.SH SYNOPSIS
+\fBdeadbranch\fR [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+.SH DESCRIPTION
+Clean up stale git branches safely
+.SH OPTIONS
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.SH SUBCOMMANDS
+.TP
+deadbranch\-list(1)
+List stale branches
+.TP
+deadbranch\-clean(1)
+Delete stale branches (merged only by default, use \-\-force for unmerged)
+.TP
+deadbranch\-config(1)
+Manage configuration
+.TP
+deadbranch\-backup(1)
+Manage backups
+.TP
+deadbranch\-completions(1)
+Generate shell completion scripts
+.TP
+deadbranch\-help(1)
+Print this message or the help of the given subcommand(s)
+.SH VERSION
+v0.1.2
+.SH AUTHORS
+Armen Gabrielyan

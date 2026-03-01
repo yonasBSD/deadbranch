@@ -87,6 +87,7 @@ jobs:
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/deadbranch dist/
+          cp man/deadbranch.1 dist/
           cp README.md LICENSE dist/ 2>/dev/null || true
           cd dist
           tar -czf ../deadbranch-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz *

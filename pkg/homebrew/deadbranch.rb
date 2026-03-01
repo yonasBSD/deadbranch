@@ -48,6 +48,7 @@ class Deadbranch < Formula
       system "cargo", "install", *std_cargo_args
     else
       bin.install "deadbranch"
+      man1.install "deadbranch.1"
     end
   end
 
