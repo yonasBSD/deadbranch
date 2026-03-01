@@ -29,7 +29,7 @@ curl -sSf https://raw.githubusercontent.com/armgabrielyan/deadbranch/main/instal
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install armgabrielyan/deadbranch/deadbranch
+brew install armgabrielyan/tap/deadbranch
 ```
 
 ### npm/npx

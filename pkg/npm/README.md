@@ -38,7 +38,7 @@ cargo install deadbranch
 
 ### Homebrew (macOS/Linux)
 ```bash
-brew install armgabrielyan/deadbranch/deadbranch
+brew install armgabrielyan/tap/deadbranch
 ```
 
 ## Usage
