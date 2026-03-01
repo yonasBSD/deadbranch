@@ -1,5 +1,12 @@
 # deadbranch
 
+[![crates.io](https://img.shields.io/crates/v/deadbranch.svg)](https://crates.io/crates/deadbranch)
+[![crates.io downloads](https://img.shields.io/crates/d/deadbranch.svg)](https://crates.io/crates/deadbranch)
+[![npm version](https://img.shields.io/npm/v/deadbranch)](https://www.npmjs.com/package/deadbranch)
+[![npm downloads](https://img.shields.io/npm/dm/deadbranch)](https://www.npmjs.com/package/deadbranch)
+[![CI](https://github.com/armgabrielyan/deadbranch/actions/workflows/ci.yml/badge.svg)](https://github.com/armgabrielyan/deadbranch/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Clean up stale git branches safely.**
 
 `deadbranch` helps you identify and remove old, unused git branches that clutter your repository. It's designed to be **safe by default** — protecting important branches and requiring explicit confirmation before any deletion.
@@ -407,6 +414,10 @@ cargo clippy
 - [ ] GitHub/GitLab PR detection
 - [ ] Multiple output formats (JSON, CSV)
 - [ ] Per-repo configuration
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=armgabrielyan/deadbranch&type=Date)](https://star-history.com/#armgabrielyan/deadbranch&Date)
 
 ## License
 
