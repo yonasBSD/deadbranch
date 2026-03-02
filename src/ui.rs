@@ -731,13 +731,15 @@ pub fn display_backup_stats(stats: &BackupStats) {
     table.load_preset(UTF8_FULL);
 
     table.set_header(vec![
+        Cell::new("#").add_attribute(Attribute::Bold),
         Cell::new("Repository").add_attribute(Attribute::Bold),
         Cell::new("Backups").add_attribute(Attribute::Bold),
         Cell::new("Size").add_attribute(Attribute::Bold),
     ]);
 
-    for repo in &stats.repos {
+    for (i, repo) in stats.repos.iter().enumerate() {
         table.add_row(vec![
+            Cell::new((i + 1).to_string()).fg(Color::DarkGrey),
             Cell::new(&repo.repo_name).fg(Color::Yellow),
             Cell::new(repo.backup_count.to_string()).fg(Color::Cyan),
             Cell::new(format_bytes(repo.total_bytes)).fg(Color::DarkGrey),

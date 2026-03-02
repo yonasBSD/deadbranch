@@ -1158,3 +1158,111 @@ fn test_backup_clean_mutual_exclusion() {
         .assert()
         .failure();
 }
+
+// ============================================================================
+// Tests for `deadbranch backup stats`
+// ============================================================================
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_stats_no_backups() {
+    // backup stats is global (not repo-scoped), so we can only assert it succeeds
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "stats"])
+        .assert()
+        .success();
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_stats_shows_table_columns() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create a backup
+    create_branch(repo.path(), "stats-test-branch");
+    make_branch_old(repo.path(), "stats-test-branch", 45);
+    merge_branch(repo.path(), "stats-test-branch");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // stats should show all table headers including #
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "stats"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("#"))
+        .stdout(predicate::str::contains("Repository"))
+        .stdout(predicate::str::contains("Backups"))
+        .stdout(predicate::str::contains("Size"));
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_stats_shows_repo_and_count() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create two backups
+    for i in 1..=2 {
+        let branch_name = format!("stats-branch-{}", i);
+        create_branch(repo.path(), &branch_name);
+        make_branch_old(repo.path(), &branch_name, 45);
+        merge_branch(repo.path(), &branch_name);
+
+        Command::cargo_bin("deadbranch")
+            .unwrap()
+            .args(["clean", "-y"])
+            .current_dir(&repo)
+            .assert()
+            .success();
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+    }
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "stats"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(&repo_name))
+        .stdout(predicate::str::contains("2")); // backup count
+}
+
+#[test]
+#[allow(deprecated)]
+fn test_backup_stats_shows_row_number() {
+    let repo = create_test_repo();
+    let repo_name = get_repo_name(repo.path());
+    let _guard = BackupCleanupGuard::new(repo_name.clone());
+
+    // Create a backup
+    create_branch(repo.path(), "stats-row-number-branch");
+    make_branch_old(repo.path(), "stats-row-number-branch", 45);
+    merge_branch(repo.path(), "stats-row-number-branch");
+
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["clean", "-y"])
+        .current_dir(&repo)
+        .assert()
+        .success();
+
+    // Output should contain "1" as the row number in the # column
+    Command::cargo_bin("deadbranch")
+        .unwrap()
+        .args(["backup", "stats"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1"))
+        .stdout(predicate::str::contains(&repo_name));
+}
