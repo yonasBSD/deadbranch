@@ -9,6 +9,34 @@
 
 **Clean up stale git branches safely.**
 
+## Table of Contents
+
+- [Demo](#demo)
+- [Features](#-features)
+- [Installation](#-installation)
+  - [Quick Install (macOS/Linux)](#-quick-install-macoslinux)
+  - [Homebrew (macOS/Linux)](#-homebrew-macoslinux)
+  - [npm/npx](#-npmnpx)
+  - [Cargo (from source)](#-cargo-from-source)
+  - [Manual Download](#️-manual-download)
+  - [Build from Source](#-build-from-source)
+- [Shell Completions](#-shell-completions)
+- [Quick Start](#-quick-start)
+- [Usage](#️-usage)
+  - [List Stale Branches](#-list-stale-branches)
+  - [Delete Stale Branches](#️-delete-stale-branches)
+  - [Dry Run Mode](#-dry-run-mode)
+  - [Configuration](#️-configuration)
+  - [Backup Management](#-backup-management)
+  - [Branch Statistics](#-branch-statistics)
+- [Safety Features](#️-safety-features)
+- [Restoring Deleted Branches](#️-restoring-deleted-branches)
+- [Pattern Matching](#-pattern-matching)
+- [Requirements](#-requirements)
+- [Roadmap](#️-roadmap)
+- [License](#-license)
+- [Contributing](#-contributing)
+
 `deadbranch` helps you identify and remove old, unused git branches that clutter your repository. It's designed to be **safe by default** — protecting important branches and requiring explicit confirmation before any deletion.
 
 ## Demo
@@ -136,6 +164,9 @@ deadbranch clean
 
 # Delete only local branches
 deadbranch clean --local
+
+# Show branch health overview
+deadbranch stats
 ```
 
 ## 🛠️ Usage
@@ -345,6 +376,49 @@ deadbranch backup clean --current --yes
 # Clean backups for a specific repository by name
 deadbranch backup clean --repo my-repo
 ```
+
+### 📊 Branch Statistics
+
+Get a health overview of all branches in your repository:
+
+```bash
+deadbranch stats [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-d, --days <N>` | Age threshold for "stale" classification (default: from config or 30) |
+
+**Example output:**
+
+```
+ℹ Using 'main' as the default branch for merge detection
+
+Repository Statistics:
+┌────────────────┬───────┬───────┬────────┐
+│ Category       │ Total │ Local │ Remote │
+├────────────────┼───────┼───────┼────────┤
+│ All branches   │ 12    │ 7     │ 5      │
+│ Merged         │ 8     │ 5     │ 3      │
+│ Unmerged       │ 4     │ 2     │ 2      │
+│ Stale (>30d)   │ 6     │ 4     │ 2      │
+│ Safe to delete │ 5     │ 3     │ 2      │
+└────────────────┴───────┴───────┴────────┘
+
+Age Distribution:
+┌─────────────┬───────┬────────┐
+│ Age Range   │ Count │ Status │
+├─────────────┼───────┼────────┤
+│ < 7 days    │ 2     │ fresh  │
+│ 7–30 days   │ 4     │ fresh  │
+│ 30–90 days  │ 3     │ stale  │
+│ > 90 days   │ 3     │ stale  │
+└─────────────┴───────┴────────┘
+
+💡 Run 'deadbranch clean' to remove 5 safe-to-delete branches
+```
+
+Stats cover all visible branches (respecting protected and exclude patterns) regardless of age, so `--days` only shifts the stale/safe-to-delete threshold — it doesn't hide branches.
 
 ## 🛡️ Safety Features
 
