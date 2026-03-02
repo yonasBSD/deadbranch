@@ -27,3 +27,13 @@ target
 
 # Generated at build time; distributed via release tarballs
 /man/deadbranch.1
+
+# Temporary docs
+docs/
+
+# Agents context files
+AGENTS.md
+CLAUDE.md
+
+# homebrew-tap repository
+homebrew-tap
