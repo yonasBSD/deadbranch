@@ -11,7 +11,7 @@ Thank you for your interest in contributing! This guide covers everything you ne
 - [Submitting a Pull Request](#submitting-a-pull-request)
 - [Code Style](#code-style)
 
-## Development Setup
+## 🔧 Development Setup
 
 **Prerequisites:** Rust toolchain (stable) and Git installed.
 
@@ -44,7 +44,7 @@ cargo clippy           # Lint
 cargo fmt              # Format code
 ```
 
-## Making Changes
+## ✏️ Making Changes
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feat/my-feature`
@@ -56,7 +56,7 @@ cargo fmt              # Format code
 8. Commit following the [commit message conventions](#commit-messages)
 9. Open a pull request
 
-## Commit Messages
+## 💬 Commit Messages
 
 This project follows the [Conventional Commits](https://www.conventionalcommits.org/) specification. The CHANGELOG and releases are generated automatically from commit messages, so following this format is required.
 
@@ -103,7 +103,7 @@ feat!: rename --force flag to --unmerged
 BREAKING CHANGE: --force has been renamed to --unmerged for clarity.
 ```
 
-## Testing
+## 🧪 Testing
 
 All new functionality and bug fixes **must** include tests.
 
@@ -149,14 +149,14 @@ cargo test -- --nocapture
 - Remote push/pull operations (requires network)
 - `config edit` (requires `$EDITOR`)
 
-## Submitting a Pull Request
+## 📬 Submitting a Pull Request
 
 - Keep PRs focused — one feature or fix per PR
 - Reference any related issues in the PR description
 - Ensure CI passes before requesting review
 - A maintainer will review and merge your PR
 
-## Code Style
+## 🎨 Code Style
 
 - Run `cargo fmt` before committing — the CI will reject unformatted code
 - Address all `cargo clippy` warnings

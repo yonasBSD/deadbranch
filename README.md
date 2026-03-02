@@ -15,31 +15,31 @@
 
 ![deadbranch demo](./demo/demo.gif)
 
-## Features
+## ✨ Features
 
-- **List stale branches** — Find branches older than N days (default: 30)
-- **Safe deletion** — Only deletes merged branches by default
-- **Protected branches** — Never touches `main`, `master`, `develop`, `staging`, or `production`
-- **WIP detection** — Automatically excludes `wip/*` and `draft/*` branches
-- **Backup creation** — Saves deleted branch SHAs for easy restoration
-- **Dry-run mode** — Preview what would be deleted without making changes
-- **Local & remote** — Works with both local and remote branches
+- 🔍 **List stale branches** — Find branches older than N days (default: 30)
+- 🔒 **Safe deletion** — Only deletes merged branches by default
+- 🛡️ **Protected branches** — Never touches `main`, `master`, `develop`, `staging`, or `production`
+- 🚧 **WIP detection** — Automatically excludes `wip/*` and `draft/*` branches
+- 💾 **Backup creation** — Saves deleted branch SHAs for easy restoration
+- 👁️ **Dry-run mode** — Preview what would be deleted without making changes
+- 🌐 **Local & remote** — Works with both local and remote branches
 
-## Installation
+## 📦 Installation
 
-### Quick Install (macOS/Linux)
+### ⚡ Quick Install (macOS/Linux)
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/armgabrielyan/deadbranch/main/install.sh | sh
 ```
 
-### Homebrew (macOS/Linux)
+### 🍺 Homebrew (macOS/Linux)
 
 ```bash
 brew install armgabrielyan/tap/deadbranch
 ```
 
-### npm/npx
+### 📦 npm/npx
 
 ```bash
 # Install globally
@@ -49,13 +49,13 @@ npm install -g deadbranch
 npx deadbranch list
 ```
 
-### Cargo (from source)
+### 🦀 Cargo (from source)
 
 ```bash
 cargo install deadbranch
 ```
 
-### Manual Download
+### ⬇️ Manual Download
 
 Download pre-built binaries from the [GitHub Releases](https://github.com/armgabrielyan/deadbranch/releases) page.
 
@@ -68,7 +68,7 @@ Download pre-built binaries from the [GitHub Releases](https://github.com/armgab
 | macOS | Apple Silicon | `deadbranch-VERSION-aarch64-apple-darwin.tar.gz` |
 | Windows | x86_64 | `deadbranch-VERSION-x86_64-pc-windows-msvc.zip` |
 
-### Build from Source
+### 🔨 Build from Source
 
 ```bash
 git clone https://github.com/armgabrielyan/deadbranch
@@ -77,7 +77,7 @@ cargo build --release
 # Binary will be at target/release/deadbranch
 ```
 
-## Shell Completions
+## 🐚 Shell Completions
 
 `deadbranch` can generate tab-completion scripts for bash, zsh, and fish.
 
@@ -119,7 +119,7 @@ deadbranch completions fish > ~/.config/fish/completions/deadbranch.fish
 
 Fish auto-loads completions from this directory — no extra configuration needed.
 
-## Quick Start
+## 🚀 Quick Start
 
 ```bash
 # List all stale branches (older than 30 days)
@@ -138,9 +138,9 @@ deadbranch clean
 deadbranch clean --local
 ```
 
-## Usage
+## 🛠️ Usage
 
-### List Stale Branches
+### 📋 List Stale Branches
 
 ```bash
 deadbranch list [OPTIONS]
@@ -174,7 +174,7 @@ Remote Branches:
 └─────────────────────────────────┴─────────┴────────┴──────────────┘
 ```
 
-### Delete Stale Branches
+### 🗑️ Delete Stale Branches
 
 ```bash
 deadbranch clean [OPTIONS]
@@ -220,7 +220,7 @@ Deleting local branches...
   ↪ Backup: ~/.deadbranch/backups/my-repo/backup-20250201-143022.txt
 ```
 
-### Dry Run Mode
+### 🔍 Dry Run Mode
 
 Preview deletions without making any changes:
 
@@ -240,7 +240,7 @@ Local Branches to Delete:
 No branches were actually deleted.
 ```
 
-### Configuration
+### ⚙️ Configuration
 
 `deadbranch` stores its configuration in `~/.deadbranch/config.toml`.
 
@@ -287,7 +287,7 @@ exclude_patterns = ["wip/*", "draft/*", "*/wip", "*/draft"]
 | `protected-branches` | `branches.protected` | Branches that are never deleted |
 | `exclude-patterns` | `branches.exclude-patterns` | Glob patterns for branches to skip |
 
-### Backup Management
+### 💾 Backup Management
 
 Every `deadbranch clean` run automatically creates a backup. Use `deadbranch backup` to manage those backups.
 
@@ -346,7 +346,7 @@ deadbranch backup clean --current --yes
 deadbranch backup clean --repo my-repo
 ```
 
-## Safety Features
+## 🛡️ Safety Features
 
 `deadbranch` is designed to prevent accidental data loss:
 
@@ -361,7 +361,7 @@ deadbranch backup clean --repo my-repo
 | **Backup files** | Saves SHA of every deleted branch for restoration |
 | **Dry-run mode** | Preview changes without risk |
 
-## Restoring Deleted Branches
+## ♻️ Restoring Deleted Branches
 
 Every deletion creates a backup file at `~/.deadbranch/backups/<repo>/backup-<timestamp>.txt`.
 
@@ -375,7 +375,7 @@ git branch bugfix/header-issue 987654fedcba
 
 You can restore branches manually by running those commands, or use the `deadbranch backup restore` command.
 
-## Pattern Matching
+## 🔤 Pattern Matching
 
 Exclude patterns support glob-style wildcards:
 
@@ -386,43 +386,27 @@ Exclude patterns support glob-style wildcards:
 | `feature/*/temp` | `feature/foo/temp`, `feature/bar/temp` |
 | `*test*` | `test`, `testing`, `my-test-branch` |
 
-## Requirements
+## 📋 Requirements
 
 - Git (installed and accessible in PATH)
 - A git repository (run from within a repo)
 
-## Development
+## 🗺️ Roadmap
 
-```bash
-# Run tests
-cargo test
+- [ ] 🖥️ Interactive TUI mode
+- [ ] 👤 `--only-mine` flag for personal branches
+- [ ] 🔗 GitHub/GitLab PR detection
+- [ ] 📊 Multiple output formats (JSON, CSV)
+- [ ] 📁 Per-repo configuration
 
-# Run with verbose output
-cargo test -- --nocapture
-
-# Build release binary
-cargo build --release
-
-# Run clippy
-cargo clippy
-```
-
-## Roadmap
-
-- [ ] Interactive TUI mode
-- [ ] `--only-mine` flag for personal branches
-- [ ] GitHub/GitLab PR detection
-- [ ] Multiple output formats (JSON, CSV)
-- [ ] Per-repo configuration
-
-## Star History
+## ⭐ Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=armgabrielyan/deadbranch&type=Date)](https://star-history.com/#armgabrielyan/deadbranch&Date)
 
-## License
+## 📄 License
 
 MIT License — see [LICENSE](LICENSE) for details.
 
-## Contributing
+## 🤝 Contributing
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, commit message conventions, testing requirements, and how to submit a pull request.
