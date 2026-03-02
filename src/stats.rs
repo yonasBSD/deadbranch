@@ -41,26 +41,8 @@ pub struct RepoStats {
 /// `threshold_days` defines the staleness boundary.
 pub fn compute_stats(branches: &[Branch], threshold_days: u32) -> RepoStats {
     let mut s = RepoStats {
-        total: 0,
-        local: 0,
-        remote: 0,
-        merged: 0,
-        merged_local: 0,
-        merged_remote: 0,
-        unmerged: 0,
-        unmerged_local: 0,
-        unmerged_remote: 0,
-        stale: 0,
-        stale_local: 0,
-        stale_remote: 0,
-        safe_to_delete: 0,
-        safe_local: 0,
-        safe_remote: 0,
-        age_lt7: 0,
-        age_7_30: 0,
-        age_30_90: 0,
-        age_gt90: 0,
         threshold_days,
+        ..RepoStats::default()
     };
 
     for branch in branches {

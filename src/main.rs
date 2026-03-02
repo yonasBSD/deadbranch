@@ -522,13 +522,18 @@ fn cmd_stats(days: Option<u32>) -> Result<()> {
         .clone()
         .unwrap_or_else(|| git::get_default_branch().unwrap_or_else(|_| "main".to_string()));
 
+    ui::info(&format!(
+        "Using '{}' as the default branch for merge detection",
+        default_branch
+    ));
+
     let spinner = ui::spinner("Loading branches...");
     let all_branches = git::list_branches(&default_branch)?;
     spinner.finish_and_clear();
 
     // Apply the same visibility rules as list/clean: respect protected and
     // exclude_patterns, but no age filter — stats covers all visible branches.
-    let filter = branch::BranchFilter {
+    let filter = BranchFilter {
         min_age_days: 0,
         local_only: false,
         remote_only: false,
