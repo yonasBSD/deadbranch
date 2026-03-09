@@ -1,8 +1,10 @@
 //! Git operations - shells out to git CLI for reliability
 
+use std::collections::HashSet;
+use std::process::Command;
+
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
-use std::process::Command;
 
 use crate::branch::Branch;
 use crate::error::DeadbranchError;
@@ -80,22 +82,54 @@ pub fn fetch_and_prune() -> Result<()> {
 
 /// List all branches (local and remote)
 pub fn list_branches(default_branch: &str) -> Result<Vec<Branch>> {
-    let mut branches = Vec::new();
+    // Fetch all merged branches once (instead of per-branch)
+    let merged = get_merged_branches(default_branch)?;
 
-    // Get local branches
-    let local_branches = list_local_branches(default_branch)?;
-    branches.extend(local_branches);
-
-    // Get remote branches
-    let remote_branches = list_remote_branches(default_branch)?;
-    branches.extend(remote_branches);
+    let mut branches = list_local_branches(&merged)?;
+    branches.extend(list_remote_branches(default_branch, &merged)?);
 
     Ok(branches)
 }
 
+/// Get the set of all branches merged into the default branch.
+/// Called once and shared across local/remote listing for O(1) lookups.
+fn get_merged_branches(default_branch: &str) -> Result<HashSet<String>> {
+    let output = Command::new("git")
+        .args(["branch", "--merged", default_branch, "-a"])
+        .output()
+        .context("Failed to check merged branches")?;
+
+    if !output.status.success() {
+        return Ok(HashSet::new());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_merged_branches(&stdout))
+}
+
+/// Parse `git branch --merged` output into a set of branch names.
+/// Handles local branches, current branch marker (`*`), and remote refs
+/// (inserting both `remotes/origin/foo` and `origin/foo` forms).
+fn parse_merged_branches(stdout: &str) -> HashSet<String> {
+    let mut merged = HashSet::new();
+
+    for line in stdout.lines() {
+        let name = line.trim().trim_start_matches("* ");
+        if name.is_empty() {
+            continue;
+        }
+        merged.insert(name.to_string());
+        // Also insert without "remotes/" prefix for remote branch lookups
+        if let Some(stripped) = name.strip_prefix("remotes/") {
+            merged.insert(stripped.to_string());
+        }
+    }
+
+    merged
+}
+
 /// List local branches with metadata
-fn list_local_branches(default_branch: &str) -> Result<Vec<Branch>> {
-    // Format: refname:short, authordate:unix, objectname:short, authorname
+fn list_local_branches(merged: &HashSet<String>) -> Result<Vec<Branch>> {
     let output = Command::new("git")
         .args([
             "for-each-ref",
@@ -134,7 +168,7 @@ fn list_local_branches(default_branch: &str) -> Result<Vec<Branch>> {
 
         let commit_date = Utc.timestamp_opt(timestamp, 0).unwrap();
         let age_days = (now - commit_date).num_days();
-        let is_merged = check_branch_merged(&name, default_branch)?;
+        let is_merged = merged.contains(&name);
 
         branches.push(Branch {
             name,
@@ -151,7 +185,7 @@ fn list_local_branches(default_branch: &str) -> Result<Vec<Branch>> {
 }
 
 /// List remote branches with metadata
-fn list_remote_branches(default_branch: &str) -> Result<Vec<Branch>> {
+fn list_remote_branches(default_branch: &str, merged: &HashSet<String>) -> Result<Vec<Branch>> {
     let output = Command::new("git")
         .args([
             "for-each-ref",
@@ -189,7 +223,7 @@ fn list_remote_branches(default_branch: &str) -> Result<Vec<Branch>> {
 
         let commit_date = Utc.timestamp_opt(timestamp, 0).unwrap();
         let age_days = (now - commit_date).num_days();
-        let is_merged = check_branch_merged(&name, default_branch)?;
+        let is_merged = merged.contains(&name);
 
         branches.push(Branch {
             name,
@@ -203,31 +237,6 @@ fn list_remote_branches(default_branch: &str) -> Result<Vec<Branch>> {
     }
 
     Ok(branches)
-}
-
-/// Check if a branch is merged into the default branch
-fn check_branch_merged(branch: &str, default_branch: &str) -> Result<bool> {
-    let output = Command::new("git")
-        .args(["branch", "--merged", default_branch, "-a"])
-        .output()
-        .context("Failed to check merged branches")?;
-
-    if !output.status.success() {
-        // If the command fails, assume not merged
-        return Ok(false);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    for line in stdout.lines() {
-        let line = line.trim().trim_start_matches("* ");
-        // Handle both local and remote branch names
-        if line == branch || line == format!("remotes/{}", branch) {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
 }
 
 /// Delete a local branch
@@ -250,22 +259,81 @@ pub fn delete_local_branch(branch: &str, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Delete a remote branch
-pub fn delete_remote_branch(branch: &str) -> Result<()> {
-    // Extract the branch name without origin/ prefix
-    let branch_name = branch.strip_prefix("origin/").unwrap_or(branch);
-
-    let output = Command::new("git")
-        .args(["push", "origin", "--delete", branch_name])
-        .output()
-        .context("Failed to delete remote branch")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("Failed to delete remote branch '{}': {}", branch, stderr);
+/// Batch delete remote branches in a single `git push` command.
+///
+/// Returns a Vec of `(branch_name, success, optional_error)` in the same
+/// order as the input. Uses one network round-trip instead of N.
+pub fn delete_remote_branches_batch(
+    branches: &[String],
+) -> Result<Vec<(String, bool, Option<String>)>> {
+    if branches.is_empty() {
+        return Ok(Vec::new());
     }
 
-    Ok(())
+    let names: Vec<&str> = branches
+        .iter()
+        .map(|b| b.strip_prefix("origin/").unwrap_or(b.as_str()))
+        .collect();
+
+    let mut args = vec!["push", "origin", "--delete"];
+    args.extend(&names);
+
+    let output = Command::new("git")
+        .args(&args)
+        .output()
+        .context("Failed to run git push --delete")?;
+
+    // All succeeded
+    if output.status.success() {
+        return Ok(branches.iter().map(|b| (b.clone(), true, None)).collect());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Ok(parse_batch_delete_stderr(&stderr, branches, &names))
+}
+
+/// Parse `git push --delete` stderr to determine per-branch success/failure.
+///
+/// `branches` are the original names (e.g. `origin/feat/x`), `names` are the
+/// stripped refspec names passed to git (e.g. `feat/x`).
+fn parse_batch_delete_stderr(
+    stderr: &str,
+    branches: &[String],
+    names: &[&str],
+) -> Vec<(String, bool, Option<String>)> {
+    // Connection-level failure: no branches were deleted
+    if stderr.contains("Could not resolve host")
+        || stderr.contains("unable to access")
+        || stderr.contains("Connection refused")
+        || stderr.contains("fatal: the remote end hung up")
+    {
+        let err = stderr.trim().to_string();
+        return branches
+            .iter()
+            .map(|b| (b.clone(), false, Some(err.clone())))
+            .collect();
+    }
+
+    // Partial failure: determine per-branch status from stderr.
+    // Git reports failures as: error: unable to delete '<name>': ...
+    // Branches not mentioned in error lines were deleted successfully.
+    branches
+        .iter()
+        .zip(names.iter())
+        .map(|(branch, &name)| {
+            if stderr.contains(&format!("unable to delete '{}'", name)) {
+                let err = stderr
+                    .lines()
+                    .find(|l| l.contains(name) && l.starts_with("error"))
+                    .unwrap_or("remote ref does not exist")
+                    .trim()
+                    .to_string();
+                (branch.clone(), false, Some(err))
+            } else {
+                (branch.clone(), true, None)
+            }
+        })
+        .collect()
 }
 
 /// Get the SHA for a branch (for backup purposes)
@@ -280,4 +348,197 @@ pub fn get_branch_sha(branch: &str) -> Result<String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_merged_local_branches() {
+        let output = "  feature/auth\n  bugfix/login\n  cleanup/old-stuff\n";
+        let merged = parse_merged_branches(output);
+        assert!(merged.contains("feature/auth"));
+        assert!(merged.contains("bugfix/login"));
+        assert!(merged.contains("cleanup/old-stuff"));
+        assert_eq!(merged.len(), 3);
+    }
+
+    #[test]
+    fn parse_merged_current_branch_marker() {
+        let output = "* main\n  feature/auth\n";
+        let merged = parse_merged_branches(output);
+        assert!(merged.contains("main"));
+        assert!(merged.contains("feature/auth"));
+        assert!(!merged.contains("* main"));
+    }
+
+    #[test]
+    fn parse_merged_remote_branches() {
+        let output = "  remotes/origin/feature/auth\n  remotes/origin/bugfix/login\n";
+        let merged = parse_merged_branches(output);
+        // Both full and stripped forms
+        assert!(merged.contains("remotes/origin/feature/auth"));
+        assert!(merged.contains("origin/feature/auth"));
+        assert!(merged.contains("remotes/origin/bugfix/login"));
+        assert!(merged.contains("origin/bugfix/login"));
+    }
+
+    #[test]
+    fn parse_merged_mixed_local_and_remote() {
+        let output = "\
+* main
+  feature/done
+  remotes/origin/feature/done
+  remotes/origin/cleanup/old
+";
+        let merged = parse_merged_branches(output);
+        assert!(merged.contains("main"));
+        assert!(merged.contains("feature/done"));
+        assert!(merged.contains("origin/feature/done"));
+        assert!(merged.contains("origin/cleanup/old"));
+    }
+
+    #[test]
+    fn parse_merged_empty_output() {
+        let merged = parse_merged_branches("");
+        assert!(merged.is_empty());
+    }
+
+    #[test]
+    fn parse_merged_blank_lines_ignored() {
+        let output = "  feature/auth\n\n  \n  bugfix/login\n";
+        let merged = parse_merged_branches(output);
+        assert!(merged.contains("feature/auth"));
+        assert!(merged.contains("bugfix/login"));
+        assert!(!merged.contains(""));
+    }
+
+    #[test]
+    fn parse_merged_lookup_matches_local_branch() {
+        let output = "  feature/auth\n  remotes/origin/feature/auth\n";
+        let merged = parse_merged_branches(output);
+        // Local branch lookup
+        assert!(merged.contains("feature/auth"));
+        // Remote branch lookup (as used by list_remote_branches)
+        assert!(merged.contains("origin/feature/auth"));
+    }
+
+    // ── Batch delete stderr parsing ────────────────────────────────
+
+    #[test]
+    fn batch_delete_empty_input() {
+        let results = parse_batch_delete_stderr("", &[], &[]);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn batch_delete_all_succeed() {
+        // When stderr has no error markers, all branches are considered successful
+        let stderr = "To github.com:user/repo.git\n - [deleted]         feat/a\n - [deleted]         feat/b\n";
+        let branches = vec!["origin/feat/a".to_string(), "origin/feat/b".to_string()];
+        let names = vec!["feat/a", "feat/b"];
+
+        let results = parse_batch_delete_stderr(stderr, &branches, &names);
+        assert_eq!(results.len(), 2);
+        assert!(results[0].1); // success
+        assert!(results[0].2.is_none());
+        assert!(results[1].1);
+        assert!(results[1].2.is_none());
+    }
+
+    #[test]
+    fn batch_delete_partial_failure() {
+        let stderr = "\
+error: unable to delete 'feat/gone': remote ref does not exist
+To github.com:user/repo.git
+ - [deleted]         feat/ok
+ ! [remote rejected] feat/gone (remote ref does not exist)
+error: failed to push some refs to 'github.com:user/repo.git'
+";
+        let branches = vec!["origin/feat/ok".to_string(), "origin/feat/gone".to_string()];
+        let names = vec!["feat/ok", "feat/gone"];
+
+        let results = parse_batch_delete_stderr(stderr, &branches, &names);
+        assert_eq!(results.len(), 2);
+
+        // feat/ok succeeded (not mentioned in error lines)
+        assert!(results[0].1);
+        assert!(results[0].2.is_none());
+
+        // feat/gone failed
+        assert!(!results[1].1);
+        assert!(results[1].2.as_ref().unwrap().contains("unable to delete"));
+    }
+
+    #[test]
+    fn batch_delete_connection_failure() {
+        let stderr = "fatal: unable to access 'https://github.com/user/repo.git/': Could not resolve host: github.com\n";
+        let branches = vec!["origin/feat/a".to_string(), "origin/feat/b".to_string()];
+        let names = vec!["feat/a", "feat/b"];
+
+        let results = parse_batch_delete_stderr(stderr, &branches, &names);
+        assert_eq!(results.len(), 2);
+
+        // All fail with same connection error
+        for (_, success, error) in &results {
+            assert!(!success);
+            assert!(error.as_ref().unwrap().contains("Could not resolve host"));
+        }
+    }
+
+    #[test]
+    fn batch_delete_connection_refused() {
+        let stderr = "fatal: Connection refused\n";
+        let branches = vec!["origin/feat/x".to_string()];
+        let names = vec!["feat/x"];
+
+        let results = parse_batch_delete_stderr(stderr, &branches, &names);
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].1);
+        assert!(results[0]
+            .2
+            .as_ref()
+            .unwrap()
+            .contains("Connection refused"));
+    }
+
+    #[test]
+    fn batch_delete_strips_origin_prefix() {
+        // Verify the function works with names that already had origin/ stripped
+        let stderr = "error: unable to delete 'cleanup/old': remote ref does not exist\n";
+        let branches = vec![
+            "origin/feat/new".to_string(),
+            "origin/cleanup/old".to_string(),
+        ];
+        let names = vec!["feat/new", "cleanup/old"];
+
+        let results = parse_batch_delete_stderr(stderr, &branches, &names);
+        assert!(results[0].1); // feat/new OK
+        assert!(!results[1].1); // cleanup/old failed
+        assert_eq!(results[0].0, "origin/feat/new");
+        assert_eq!(results[1].0, "origin/cleanup/old");
+    }
+
+    #[test]
+    fn batch_delete_multiple_failures() {
+        let stderr = "\
+error: unable to delete 'feat/a': remote ref does not exist
+error: unable to delete 'feat/c': remote ref does not exist
+To github.com:user/repo.git
+ - [deleted]         feat/b
+error: failed to push some refs to 'github.com:user/repo.git'
+";
+        let branches = vec![
+            "origin/feat/a".to_string(),
+            "origin/feat/b".to_string(),
+            "origin/feat/c".to_string(),
+        ];
+        let names = vec!["feat/a", "feat/b", "feat/c"];
+
+        let results = parse_batch_delete_stderr(stderr, &branches, &names);
+        assert!(!results[0].1); // feat/a failed
+        assert!(results[1].1); // feat/b succeeded
+        assert!(!results[2].1); // feat/c failed
+    }
 }

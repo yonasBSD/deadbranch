@@ -7,6 +7,7 @@ mod config;
 mod error;
 mod git;
 mod stats;
+mod tui;
 mod ui;
 
 use anyhow::{Context, Result};
@@ -49,7 +50,17 @@ fn main() -> Result<()> {
             local,
             remote,
             yes,
-        } => cmd_clean(days, merged, force, dry_run, local, remote, yes),
+            interactive,
+        } => cmd_clean(
+            days,
+            merged,
+            force,
+            dry_run,
+            local,
+            remote,
+            yes,
+            interactive,
+        ),
 
         Commands::Config { action } => cmd_config(action),
 
@@ -139,6 +150,7 @@ fn cmd_list(
 }
 
 /// Clean (delete) stale branches
+#[allow(clippy::too_many_arguments)]
 fn cmd_clean(
     days: Option<u32>,
     merged: bool,
@@ -147,6 +159,7 @@ fn cmd_clean(
     local_only: bool,
     remote_only: bool,
     skip_confirm: bool,
+    interactive: bool,
 ) -> Result<()> {
     let config = Config::load()?;
 
@@ -159,6 +172,46 @@ fn cmd_clean(
         .default_branch
         .clone()
         .unwrap_or_else(|| git::get_default_branch().unwrap_or_else(|_| "main".to_string()));
+
+    // List all branches
+    let spinner = ui::spinner("Loading branches...");
+    let all_branches = git::list_branches(&default_branch)?;
+    spinner.finish_and_clear();
+
+    if interactive {
+        // For TUI, apply only age + protection + exclusion filters.
+        // merged/local/remote become initial toggle state in the TUI.
+        let tui_filter = BranchFilter {
+            min_age_days: min_age,
+            local_only: false,
+            remote_only: false,
+            merged_only: false,
+            protected_branches: config.branches.protected.clone(),
+            exclude_patterns: config.branches.exclude_patterns.clone(),
+        };
+
+        let tui_branches: Vec<_> = all_branches
+            .into_iter()
+            .filter(|b| tui_filter.matches(b))
+            .collect();
+
+        if tui_branches.is_empty() {
+            ui::info("No branches to show in interactive mode.");
+            return Ok(());
+        }
+
+        // Build initial filter state from CLI flags for toggle seeding
+        let initial_filter = BranchFilter {
+            min_age_days: 0,
+            local_only,
+            remote_only,
+            merged_only: merged,
+            protected_branches: Vec::new(),
+            exclude_patterns: Vec::new(),
+        };
+
+        return tui::run_interactive(tui_branches, &initial_filter, &default_branch, force);
+    }
 
     // By default, only delete merged branches unless --force is used
     let merged_only = merged || !force;
@@ -173,11 +226,6 @@ fn cmd_clean(
         protected_branches: config.branches.protected.clone(),
         exclude_patterns: config.branches.exclude_patterns,
     };
-
-    // List all branches
-    let spinner = ui::spinner("Loading branches...");
-    let all_branches = git::list_branches(&default_branch)?;
-    spinner.finish_and_clear();
 
     // Filter branches
     let mut branches: Vec<_> = all_branches
@@ -218,23 +266,16 @@ fn cmd_clean(
             ui::display_branches(&remote_branches, &title);
         }
 
-        ui::print_dry_run_header();
+        // Count by operation type
+        let local_safe: usize = local_branches
+            .iter()
+            .filter(|b| force || b.is_merged)
+            .count();
+        let local_force: usize = local_branches.len() - local_safe;
+        let remote_count: usize = remote_branches.len();
+        let total = local_branches.len() + remote_count;
 
-        for branch in &local_branches {
-            let flag = if force || branch.is_merged {
-                "-d"
-            } else {
-                "-D"
-            };
-            ui::print_dry_run_command(&format!("git branch {} {}", flag, branch.name));
-        }
-
-        for branch in &remote_branches {
-            let name = branch.name.strip_prefix("origin/").unwrap_or(&branch.name);
-            ui::print_dry_run_command(&format!("git push origin --delete {}", name));
-        }
-
-        ui::print_dry_run_footer();
+        ui::print_dry_run_summary(total, local_safe, local_force, remote_count);
         return Ok(());
     }
 
@@ -293,7 +334,7 @@ fn cmd_clean(
 }
 
 /// Delete local branches and create backup file
-fn delete_branches_with_backup(branches: &[branch::Branch], force: bool) -> Result<()> {
+pub(crate) fn delete_branches_with_backup(branches: &[branch::Branch], force: bool) -> Result<()> {
     let backup = create_backup_file(branches)?;
     let branch_word = ui::pluralize_branch(branches.len());
 
@@ -337,8 +378,9 @@ fn delete_branches_with_backup(branches: &[branch::Branch], force: bool) -> Resu
     Ok(())
 }
 
-/// Delete remote branches and create backup file
-fn delete_remote_branches_with_backup(branches: &[branch::Branch]) -> Result<()> {
+/// Delete remote branches and create backup file.
+/// Uses batch `git push origin --delete` for a single network round-trip.
+pub(crate) fn delete_remote_branches_with_backup(branches: &[branch::Branch]) -> Result<()> {
     let backup = create_backup_file(branches)?;
     let branch_word = ui::pluralize_branch(branches.len());
 
@@ -346,19 +388,20 @@ fn delete_remote_branches_with_backup(branches: &[branch::Branch]) -> Result<()>
     println!();
     println!("Deleting remote {}...", branch_word);
 
+    let names: Vec<String> = branches.iter().map(|b| b.name.clone()).collect();
+    let results = git::delete_remote_branches_batch(&names)?;
+
     let mut deleted = 0;
     let mut failed = 0;
 
-    for branch in branches {
-        match git::delete_remote_branch(&branch.name) {
-            Ok(()) => {
-                println!("  {} {}", console::style("✅").green(), branch.name);
-                deleted += 1;
-            }
-            Err(e) => {
-                println!("  {} {} ({})", console::style("❌").red(), branch.name, e);
-                failed += 1;
-            }
+    for (name, success, error) in &results {
+        if *success {
+            println!("  {} {}", console::style("✅").green(), name);
+            deleted += 1;
+        } else {
+            let err_msg = error.as_deref().unwrap_or("unknown error");
+            println!("  {} {} ({})", console::style("❌").red(), name, err_msg);
+            failed += 1;
         }
     }
 
@@ -384,7 +427,7 @@ fn delete_remote_branches_with_backup(branches: &[branch::Branch]) -> Result<()>
 
 /// Create a backup file with branch SHAs for potential restoration
 /// Saves to ~/.deadbranch/backups/<repo-name>/backup-<timestamp>.txt
-fn create_backup_file(branches: &[branch::Branch]) -> Result<String> {
+pub(crate) fn create_backup_file(branches: &[branch::Branch]) -> Result<String> {
     let repo_name = Config::get_repo_name();
     let backup_dir = Config::repo_backup_dir(&repo_name)?;
 
