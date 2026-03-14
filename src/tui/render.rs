@@ -127,7 +127,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     match app.mode {
         Mode::Browse | Mode::Filter | Mode::VisualSelect => draw_browse(frame, app),
         Mode::Confirm => draw_confirm(frame, app),
-        Mode::Executing => draw_executing(frame, app),
+        Mode::Snapping => draw_snapping(frame, app),
         Mode::Summary => draw_summary(frame, app),
     }
 
@@ -256,6 +256,8 @@ fn draw_branch_list(frame: &mut Frame, app: &mut App, area: Rect) {
     let mut rows: Vec<Row> = Vec::new();
     let mut cursor_table_row: usize = 0;
     let mut last_was_merged: Option<bool> = None;
+    // Track branch_index → table row index (before hr_row insertion)
+    let mut branch_row_map: Vec<(usize, usize)> = Vec::new();
 
     for (row_idx, &branch_idx) in app.visible.iter().enumerate() {
         let branch = &app.all_branches[branch_idx];
@@ -402,6 +404,7 @@ fn draw_branch_list(frame: &mut Frame, app: &mut App, area: Rect) {
             row = row.style(Style::default().bg(Color::Indexed(236)));
         }
 
+        branch_row_map.push((branch_idx, rows.len()));
         rows.push(row);
     }
 
@@ -472,6 +475,21 @@ fn draw_branch_list(frame: &mut Frame, app: &mut App, area: Rect) {
         *app.table_state.offset_mut() = cursor_table_row.saturating_sub(2);
     }
     frame.render_stateful_widget(table, area, &mut app.table_state);
+
+    // Populate branch_screen_positions for snap animation.
+    // After hr_row insertion at index 0, all row indices shifted by +1.
+    // The table header takes 1 row, so data row at index `i` is at y = area.y + 1 + (i - offset).
+    let final_offset = app.table_state.offset();
+    app.branch_screen_positions.clear();
+    for &(branch_idx, pre_hr_idx) in &branch_row_map {
+        let data_row_idx = pre_hr_idx + 1; // +1 for hr_row insertion
+        if data_row_idx >= final_offset {
+            let y = area.y + 1 + (data_row_idx - final_offset) as u16;
+            if y < area.y + area.height {
+                app.branch_screen_positions.push((branch_idx, y));
+            }
+        }
+    }
 }
 
 fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
@@ -563,6 +581,171 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         ))
     };
     frame.render_widget(Paragraph::new(selection_line), lines_area[1]);
+}
+
+// ── Snapping mode ───────────────────────────────────────────────────
+
+fn draw_snapping(frame: &mut Frame, app: &mut App) {
+    let area = frame.area();
+
+    let chunks = Layout::vertical([
+        Constraint::Length(1), // header
+        Constraint::Length(1), // spacer
+        Constraint::Min(1),    // branch list
+        Constraint::Length(3), // status bar
+    ])
+    .split(area);
+
+    draw_header(frame, app, chunks[0]);
+    draw_branch_list(frame, app, chunks[2]);
+
+    // Status bar: show deletion progress gauge
+    let block = Block::default().borders(Borders::TOP);
+    let inner = block.inner(chunks[3]);
+    frame.render_widget(block, chunks[3]);
+    if inner.height >= 1 {
+        let total = app.deletion_total;
+        let completed = app.deletion_results.len();
+        let ratio = if total > 0 {
+            (completed as f64 / total as f64).min(1.0)
+        } else {
+            0.0
+        };
+
+        let status_chunks = Layout::vertical([
+            Constraint::Length(1), // gauge
+            Constraint::Min(0),    // remaining space
+        ])
+        .split(inner);
+
+        // Center the gauge at ~40% of screen width
+        let gauge_width = (status_chunks[0].width * 2 / 5).max(20);
+        let gauge_area = Layout::horizontal([
+            Constraint::Min(0),
+            Constraint::Length(gauge_width),
+            Constraint::Min(0),
+        ])
+        .split(status_chunks[0])[1];
+
+        let label = format!(" Snapping {}/{} ", completed, total);
+        let gauge = Gauge::default()
+            .gauge_style(Style::default().fg(CYAN))
+            .ratio(ratio)
+            .label(Span::styled(label, Style::default().fg(WHITE)))
+            .use_unicode(true);
+        frame.render_widget(gauge, gauge_area);
+    }
+
+    // Capture actual screen positions from the buffer on first frame.
+    // This must happen after draw_branch_list which populates branch_screen_positions.
+    if let Some(ref mut anim) = app.snap_animation {
+        if !anim.captured {
+            let table_area = chunks[2];
+            let buf = frame.buffer_mut();
+
+            for row in anim.rows.iter_mut() {
+                if let Some(&(_, screen_y)) = app
+                    .branch_screen_positions
+                    .iter()
+                    .find(|&&(bidx, _)| bidx == row.branch_index)
+                {
+                    if screen_y < area.y + area.height {
+                        // Scan buffer at this Y, capturing non-space characters
+                        // from the name column onward (skip selector + linenum + sep)
+                        let mut cells: Vec<(u16, char, Color)> = Vec::new();
+                        for x in table_area.x..table_area.x + table_area.width {
+                            let bcell = &buf[(x, screen_y)];
+                            let ch = bcell.symbol().chars().next().unwrap_or(' ');
+                            if ch != ' ' {
+                                cells.push((x, ch, bcell.fg));
+                            }
+                        }
+                        row.capture_from_screen(screen_y, cells);
+                    }
+                }
+            }
+            anim.captured = true;
+        }
+    }
+
+    // Apply phase-specific effects to the buffer
+    if let Some(ref anim) = app.snap_animation {
+        let buf = frame.buffer_mut();
+        match anim.phase {
+            super::snap::SnapPhase::Flash => {
+                // Tint entire screen
+                for y in area.y..area.y + area.height {
+                    for x in area.x..area.x + area.width {
+                        let cell = &mut buf[(x, y)];
+                        cell.set_fg(GRAY);
+                        cell.set_bg(Color::Indexed(236));
+                    }
+                }
+            }
+            super::snap::SnapPhase::Dissolve | super::snap::SnapPhase::Settle => {
+                for row in &anim.rows {
+                    if row.x_positions.is_empty() {
+                        continue;
+                    }
+                    let y = row.screen_y;
+                    if y >= area.y + area.height {
+                        continue;
+                    }
+
+                    for (i, cell_state) in row.cell_states.iter().enumerate() {
+                        let x = match row.x_positions.get(i) {
+                            Some(&x) => x,
+                            None => break,
+                        };
+                        if x >= area.x + area.width {
+                            break;
+                        }
+                        match cell_state.render() {
+                            Some((ch, color)) => {
+                                let cell = &mut buf[(x, y)];
+                                cell.set_char(ch);
+                                cell.set_fg(color);
+                            }
+                            None => {
+                                let cell = &mut buf[(x, y)];
+                                cell.set_char(' ');
+                            }
+                        }
+                    }
+                }
+
+                // Overlay free-floating particles
+                for p in &anim.particles.particles {
+                    let px = p.x as u16;
+                    let py = p.y as u16;
+                    if px >= area.x
+                        && px < area.x + area.width
+                        && py >= area.y
+                        && py < area.y + area.height
+                    {
+                        let cell = &mut buf[(px, py)];
+                        cell.set_char(p.char());
+                        cell.set_fg(p.color);
+                    }
+                }
+            }
+            super::snap::SnapPhase::Done => {
+                // Blank out dissolved rows so the table doesn't flash back
+                for row in &anim.rows {
+                    if row.x_positions.is_empty() {
+                        continue;
+                    }
+                    let y = row.screen_y;
+                    if y >= area.y + area.height {
+                        continue;
+                    }
+                    for x in area.x..area.x + area.width {
+                        buf[(x, y)].set_char(' ');
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ── Confirm mode ────────────────────────────────────────────────────
@@ -730,103 +913,6 @@ fn draw_confirm(frame: &mut Frame, app: &App) {
         vec![("Enter/y", "confirm"), ("Esc", "back")]
     };
     draw_footer_hints(frame, footer_area, hints);
-}
-
-// ── Executing mode ──────────────────────────────────────────────────
-
-fn draw_executing(frame: &mut Frame, app: &App) {
-    let area = frame.area();
-    let total = app.selected_count();
-    let completed = app.deletion_results.len();
-
-    // Use most of the terminal height (capped by centered_dialog)
-    let content_height = area.height.saturating_sub(6);
-
-    let dialog = centered_dialog(area, content_height);
-    frame.render_widget(Clear, dialog);
-
-    let block = Block::default()
-        .title(" Deleting Branches ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(CYAN));
-    let inner = block.inner(dialog);
-    frame.render_widget(block, dialog);
-
-    // Split: content area on top, gauge at bottom
-    let chunks = Layout::vertical([
-        Constraint::Min(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ])
-    .split(inner);
-    let content_area = chunks[0];
-    let gauge_area = chunks[1];
-
-    let mut lines: Vec<Line> = Vec::new();
-
-    let backup_lines: u16 = if app.backup_path.is_some() { 2 } else { 0 };
-    if let Some(ref path) = app.backup_path {
-        lines.push(Line::from(Span::styled(
-            format!("  Backup: {}", path),
-            Style::default().fg(GRAY),
-        )));
-        lines.push(Line::from(""));
-    }
-
-    // Show only the tail of results that fit the content area,
-    // so the list scrolls like a log during large deletions.
-    let max_result_lines = content_area.height.saturating_sub(backup_lines + 1) as usize; // +1 for pending line
-    let skip = app.deletion_results.len().saturating_sub(max_result_lines);
-    if skip > 0 {
-        lines.push(Line::from(Span::styled(
-            format!("  ... {} more above", skip),
-            Style::default().fg(GRAY),
-        )));
-    }
-    for result in app.deletion_results.iter().skip(skip) {
-        let (icon, color) = if result.success {
-            (CHECK, GREEN)
-        } else {
-            (CROSS, RED)
-        };
-        let mut spans = vec![
-            Span::styled(format!("  {} ", icon), Style::default().fg(color)),
-            Span::styled(&result.branch.name, Style::default().fg(WHITE)),
-        ];
-        if let Some(ref err) = result.error {
-            spans.push(Span::styled(format!("  {}", err), Style::default().fg(RED)));
-        }
-        lines.push(Line::from(spans));
-    }
-
-    // Show pending branches with dimmed style
-    let pending_count = total.saturating_sub(completed);
-    if pending_count > 0 {
-        lines.push(Line::from(Span::styled(
-            format!("  {} deleting...", DOT),
-            Style::default().fg(GRAY),
-        )));
-    }
-
-    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, content_area);
-
-    // Progress gauge
-    let ratio = if total > 0 {
-        completed as f64 / total as f64
-    } else {
-        0.0
-    };
-    let gauge_label = Span::styled(
-        format!(" {}/{} ", completed, total),
-        Style::default().fg(WHITE),
-    );
-    let gauge = Gauge::default()
-        .gauge_style(Style::default().fg(CYAN))
-        .ratio(ratio)
-        .label(gauge_label)
-        .use_unicode(true);
-    frame.render_widget(gauge, gauge_area);
 }
 
 // ── Summary mode ────────────────────────────────────────────────────
